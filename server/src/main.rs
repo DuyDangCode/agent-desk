@@ -559,7 +559,7 @@ async fn resize_pty_handler(
             .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         Ok(Json(serde_json::json!({ "success": true })))
     } else {
-        Err((axum::http::StatusCode::NOT_FOUND, "PTY session not found".to_string()))
+        Ok(Json(serde_json::json!({ "success": false, "reason": "PTY session not found" })))
     }
 }
 

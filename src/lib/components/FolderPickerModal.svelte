@@ -23,7 +23,8 @@
     FileCode,
     Sparkles,
     FolderKanban,
-    Compass
+    Compass,
+    Plus
   } from 'lucide-svelte';
 
   let searchQuery = $state('');

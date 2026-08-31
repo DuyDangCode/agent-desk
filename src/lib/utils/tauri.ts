@@ -1,4 +1,4 @@
-import type { RepoInfo, RepoDiffData, CommitResult, DirectoryListing } from '$lib/types';
+import type { RepoInfo, RepoDiffData, CommitResult, DirectoryListing, BranchInfo, StashInfo } from '$lib/types';
 
 const SERVER_BASE = 'http://127.0.0.1:4020';
 const WS_BASE = 'ws://127.0.0.1:4020';

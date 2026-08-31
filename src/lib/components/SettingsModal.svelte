@@ -354,7 +354,7 @@
                     <input
                       id="llm-endpoint"
                       type="text"
-                      bind:value={localLlm.baseUrl}
+                      bind:value={localLlm.endpoint}
                       placeholder={localLlm.provider === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
                       class="w-full bg-white dark:bg-deck-bg border border-deck-border rounded px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-deck-bright"
                     />
