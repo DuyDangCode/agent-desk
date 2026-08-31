@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AgentDeck</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      (function() {
+        try {
+          const pref = localStorage.getItem('agentdeck_theme_preference');
+          const isDark = pref === 'black' || pref === 'dark' || (!pref || pref === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          const root = document.documentElement;
+          const lightVars = {
+            '--deck-bg': '#ffffff',
+            '--deck-surface': '#ffffff',
+            '--deck-card': '#f3f4f6',
+            '--deck-border': '#e2e8f0',
+            '--deck-muted': '#64748b',
+            '--deck-text': '#1e293b',
+            '--deck-bright': '#0f172a',
+            '--deck-accent': '#0969da',
+            '--deck-accent-hover': '#0550ae',
+            '--deck-success': '#16a34a',
+            '--deck-danger': '#e11d48',
+            '--deck-warning': '#d97706'
+          };
+          const darkVars = {
+            '--deck-bg': '#0d1117',
+            '--deck-surface': '#161b22',
+            '--deck-card': '#21262d',
+            '--deck-border': '#30363d',
+            '--deck-muted': '#8b949e',
+            '--deck-text': '#c9d1d9',
+            '--deck-bright': '#f0f6fc',
+            '--deck-accent': '#58a6ff',
+            '--deck-accent-hover': '#79c0ff',
+            '--deck-success': '#3fb950',
+            '--deck-danger': '#f85149',
+            '--deck-warning': '#d29922'
+          };
+          const activeVars = isDark ? darkVars : lightVars;
+          for (const k in activeVars) {
+            root.style.setProperty(k, activeVars[k]);
+          }
+          if (isDark) {
+            root.classList.add('dark');
+            root.classList.remove('light');
+            root.setAttribute('data-theme', 'dark');
+          } else {
+            root.classList.remove('dark');
+            root.classList.add('light');
+            root.setAttribute('data-theme', 'light');
+          }
+          root.style.colorScheme = isDark ? 'dark' : 'light';
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-deck-bg text-deck-text overflow-hidden select-none font-sans">
+    <div id="app" class="h-screen w-screen overflow-hidden"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

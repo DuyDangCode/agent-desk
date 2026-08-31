@@ -1,0 +1,23 @@
+[package]
+name = "agent-deck-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+portable-pty = "0.8"
+git2 = { version = "0.19", default-features = false }
+similar = { version = "2.6", features = ["inline"] }
+notify = "6.1"
+notify-debouncer-mini = "0.4"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+futures-util = "0.3"
+uuid = { version = "1.8", features = ["v4", "serde"] }
+parking_lot = "0.12"
+log = "0.4"
+env_logger = "0.11"
+dirs = "5.0"
+crossbeam-channel = "0.5"

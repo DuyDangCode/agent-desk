@@ -1,0 +1,249 @@
+use crate::git::{BranchInfo, CommitResult, GitEngine, RepoDiffData, RepoInfo, StashInfo};
+use crate::pty::PtyManager;
+use crate::watcher::WatcherManager;
+use serde::Serialize;
+use std::fs;
+use std::path::PathBuf;
+use tauri::{AppHandle, State};
+
+#[derive(Debug, Serialize)]
+pub struct FolderItem {
+    pub name: String,
+    pub path: String,
+    pub is_git_repo: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DirectoryListing {
+    pub current_path: String,
+    pub parent_path: Option<String>,
+    pub home_path: String,
+    pub directories: Vec<FolderItem>,
+}
+
+#[tauri::command]
+pub fn get_default_working_dir() -> String {
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| {
+            dirs::home_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| ".".to_string())
+        })
+}
+
+#[tauri::command]
+pub fn list_directory_folders(path: Option<String>) -> Result<DirectoryListing, String> {
+    let home_path = dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "/".to_string());
+
+    let target_path_str = path
+        .filter(|p| !p.trim().is_empty())
+        .unwrap_or_else(|| {
+            std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| home_path.clone())
+        });
+
+    let target_path = PathBuf::from(&target_path_str);
+    let canonical = target_path
+        .canonicalize()
+        .unwrap_or(target_path);
+
+    let current_path = canonical.to_string_lossy().to_string();
+    let parent_path = canonical
+        .parent()
+        .map(|p| p.to_string_lossy().to_string());
+
+    let mut directories = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(&canonical) {
+        let mut subdirs: Vec<PathBuf> = Vec::new();
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_dir() {
+                    let p = entry.path();
+                    let file_name = p.file_name().unwrap_or_default().to_string_lossy();
+                    if !file_name.starts_with('.') || file_name == ".git" {
+                        subdirs.push(p);
+                    }
+                }
+            }
+        }
+
+        subdirs.sort_by(|a, b| {
+            a.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_lowercase()
+                .cmp(&b.file_name().unwrap_or_default().to_string_lossy().to_lowercase())
+        });
+
+        for dir in subdirs {
+            let name = dir
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let is_git = dir.join(".git").exists() || dir.join("HEAD").exists();
+            directories.push(FolderItem {
+                name,
+                path: dir.to_string_lossy().to_string(),
+                is_git_repo: is_git,
+            });
+        }
+    }
+
+    Ok(DirectoryListing {
+        current_path,
+        parent_path,
+        home_path,
+        directories,
+    })
+}
+
+#[tauri::command]
+pub fn spawn_pty(
+    app: AppHandle,
+    pty_manager: State<PtyManager>,
+    session_id: String,
+    cwd: Option<String>,
+    shell: Option<String>,
+    cols: u16,
+    rows: u16,
+) -> Result<String, String> {
+    pty_manager.spawn(app, session_id, cwd, shell, cols, rows)
+}
+
+#[tauri::command]
+pub fn write_pty(
+    pty_manager: State<PtyManager>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    pty_manager.write(&session_id, &data)
+}
+
+#[tauri::command]
+pub fn resize_pty(
+    pty_manager: State<PtyManager>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    pty_manager.resize(&session_id, cols, rows)
+}
+
+#[tauri::command]
+pub fn kill_pty(
+    pty_manager: State<PtyManager>,
+    session_id: String,
+) -> Result<(), String> {
+    pty_manager.kill(&session_id)
+}
+
+#[tauri::command]
+pub fn open_repository(
+    app: AppHandle,
+    watcher_manager: State<WatcherManager>,
+    path: String,
+) -> Result<RepoInfo, String> {
+    let info = GitEngine::get_repo_info(&path)?;
+    let _ = watcher_manager.watch(app, &info.path);
+    Ok(info)
+}
+
+#[tauri::command]
+pub fn unwatch_repository(
+    watcher_manager: State<WatcherManager>,
+    path: String,
+) -> Result<(), String> {
+    watcher_manager.unwatch(&path);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_repository_diffs(path: String) -> Result<RepoDiffData, String> {
+    GitEngine::get_diffs(&path)
+}
+
+#[tauri::command]
+pub fn stage_file(path: String, relative_path: String) -> Result<(), String> {
+    GitEngine::stage_file(&path, &relative_path)
+}
+
+#[tauri::command]
+pub fn unstage_file(path: String, relative_path: String) -> Result<(), String> {
+    GitEngine::unstage_file(&path, &relative_path)
+}
+
+#[tauri::command]
+pub fn stage_all(path: String) -> Result<(), String> {
+    GitEngine::stage_all(&path)
+}
+
+#[tauri::command]
+pub fn unstage_all(path: String) -> Result<(), String> {
+    GitEngine::unstage_all(&path)
+}
+
+#[tauri::command]
+pub fn stage_hunk(path: String, relative_path: String, hunk_index: usize) -> Result<(), String> {
+    GitEngine::stage_hunk(&path, &relative_path, hunk_index)
+}
+
+#[tauri::command]
+pub fn unstage_hunk(path: String, relative_path: String, hunk_index: usize) -> Result<(), String> {
+    GitEngine::unstage_hunk(&path, &relative_path, hunk_index)
+}
+
+#[tauri::command]
+pub fn discard_hunk(path: String, relative_path: String, hunk_index: usize) -> Result<(), String> {
+    GitEngine::discard_hunk(&path, &relative_path, hunk_index)
+}
+
+#[tauri::command]
+pub fn discard_file(path: String, relative_path: String) -> Result<(), String> {
+    GitEngine::discard_file(&path, &relative_path)
+}
+
+#[tauri::command]
+pub fn commit_staged(path: String, message: String) -> Result<CommitResult, String> {
+    GitEngine::commit_staged(&path, &message)
+}
+
+#[tauri::command]
+pub fn commit_amend(path: String, message: String) -> Result<CommitResult, String> {
+    GitEngine::commit_amend(&path, &message)
+}
+
+#[tauri::command]
+pub fn list_branches(path: String) -> Result<Vec<BranchInfo>, String> {
+    GitEngine::list_branches(&path)
+}
+
+#[tauri::command]
+pub fn checkout_branch(path: String, branch_name: String) -> Result<(), String> {
+    GitEngine::checkout_branch(&path, &branch_name)
+}
+
+#[tauri::command]
+pub fn create_branch(path: String, branch_name: String) -> Result<(), String> {
+    GitEngine::create_branch(&path, &branch_name)
+}
+
+#[tauri::command]
+pub fn stash_save(path: String, message: Option<String>) -> Result<(), String> {
+    GitEngine::stash_save(&path, message.as_deref())
+}
+
+#[tauri::command]
+pub fn stash_pop(path: String) -> Result<(), String> {
+    GitEngine::stash_pop(&path)
+}
+
+#[tauri::command]
+pub fn list_stashes(path: String) -> Result<Vec<StashInfo>, String> {
+    GitEngine::list_stashes(&path)
+}

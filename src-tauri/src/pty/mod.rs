@@ -1,0 +1,203 @@
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use parking_lot::Mutex;
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PtyOutputPayload {
+    pub session_id: String,
+    pub data: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PtyExitPayload {
+    pub session_id: String,
+    pub exit_code: Option<u32>,
+}
+
+pub struct PtySession {
+    pub id: String,
+    pub master: Box<dyn MasterPty + Send>,
+    pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    pub running: Arc<AtomicBool>,
+}
+
+#[derive(Default)]
+pub struct PtyManager {
+    pub sessions: Arc<Mutex<HashMap<String, PtySession>>>,
+}
+
+impl PtyManager {
+    pub fn new() -> Self {
+        Self {
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub fn spawn(
+        &self,
+        app: AppHandle,
+        session_id: String,
+        cwd: Option<String>,
+        shell: Option<String>,
+        cols: u16,
+        rows: u16,
+    ) -> Result<String, String> {
+        // If session already exists and is running, preserve it
+        {
+            let sessions = self.sessions.lock();
+            if let Some(session) = sessions.get(&session_id) {
+                if session.running.load(Ordering::Relaxed) {
+                    return Ok(session_id);
+                }
+            }
+        }
+
+        let pty_system = native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: rows.max(1),
+                cols: cols.max(1),
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| format!("Failed to open PTY pair: {}", e))?;
+
+        let shell_cmd = shell.unwrap_or_else(|| {
+            if cfg!(windows) {
+                std::env::var("COMSPEC").unwrap_or_else(|_| "powershell.exe".to_string())
+            } else {
+                std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+            }
+        });
+
+        let mut cmd = CommandBuilder::new(&shell_cmd);
+        if let Some(ref dir) = cwd {
+            if !dir.is_empty() {
+                cmd.cwd(dir);
+            }
+        }
+
+        // Set terminal environment variables
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+        cmd.env("LANG", "en_US.UTF-8");
+        cmd.env("LC_ALL", "en_US.UTF-8");
+
+        let mut child = pair
+            .slave
+            .spawn_command(cmd)
+            .map_err(|e| format!("Failed to spawn child command: {}", e))?;
+
+        let mut reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|e| format!("Failed to clone PTY reader: {}", e))?;
+
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| format!("Failed to take PTY writer: {}", e))?;
+
+        let running = Arc::new(AtomicBool::new(true));
+        let running_clone = running.clone();
+        let session_id_clone = session_id.clone();
+        let app_clone = app.clone();
+
+        // Background reader thread
+        std::thread::Builder::new()
+            .name(format!("pty-reader-{}", session_id))
+            .spawn(move || {
+                let mut buf = [0u8; 8192];
+                while running_clone.load(Ordering::Relaxed) {
+                    match reader.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                            let _ = app_clone.emit(
+                                "pty-output",
+                                PtyOutputPayload {
+                                    session_id: session_id_clone.clone(),
+                                    data,
+                                },
+                            );
+                        }
+                        Err(e) => {
+                            log::debug!("PTY read error (may be closed): {}", e);
+                            break;
+                        }
+                    }
+                }
+
+                let exit_status = child.wait().ok();
+                let exit_code = exit_status.and_then(|s| if s.success() { Some(0) } else { None });
+
+                let _ = app_clone.emit(
+                    "pty-exit",
+                    PtyExitPayload {
+                        session_id: session_id_clone,
+                        exit_code,
+                    },
+                );
+            })
+            .map_err(|e| format!("Failed to spawn PTY reader thread: {}", e))?;
+
+        let session = PtySession {
+            id: session_id.clone(),
+            master: pair.master,
+            writer: Arc::new(Mutex::new(writer)),
+            running,
+        };
+
+        self.sessions.lock().insert(session_id.clone(), session);
+        Ok(session_id)
+    }
+
+    pub fn write(&self, session_id: &str, data: &str) -> Result<(), String> {
+        let sessions = self.sessions.lock();
+        if let Some(session) = sessions.get(session_id) {
+            let mut writer = session.writer.lock();
+            writer
+                .write_all(data.as_bytes())
+                .map_err(|e| format!("Failed to write to PTY: {}", e))?;
+            writer.flush().map_err(|e| format!("Failed to flush PTY: {}", e))?;
+            Ok(())
+        } else {
+            Err(format!("PTY session not found: {}", session_id))
+        }
+    }
+
+    pub fn resize(&self, session_id: &str, cols: u16, rows: u16) -> Result<(), String> {
+        let sessions = self.sessions.lock();
+        if let Some(session) = sessions.get(session_id) {
+            session
+                .master
+                .resize(PtySize {
+                    rows: rows.max(1),
+                    cols: cols.max(1),
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .map_err(|e| format!("Failed to resize PTY: {}", e))?;
+            Ok(())
+        } else {
+            Err(format!("PTY session not found: {}", session_id))
+        }
+    }
+
+    pub fn kill(&self, session_id: &str) -> Result<(), String> {
+        let mut sessions = self.sessions.lock();
+        if let Some(session) = sessions.remove(session_id) {
+            session.running.store(false, Ordering::Relaxed);
+            Ok(())
+        } else {
+            Ok(())
+        }
+    }
+}
