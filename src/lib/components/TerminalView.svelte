@@ -139,6 +139,25 @@
     const val = (e.target as HTMLSelectElement).value;
     if (!val) return;
 
+    if (val === 'reset_shell') {
+      const targetSessionId = appState.focusedSessionId;
+      if (targetSessionId) {
+        appState.setSessionAgent(targetSessionId, false, 'shell');
+        appState.showToast('Reset terminal session to Standard Shell', 'info');
+      }
+      selectedQuickAction = '';
+      return;
+    }
+
+    if (val === 'toggle_agent') {
+      const targetSessionId = appState.focusedSessionId;
+      if (targetSessionId) {
+        appState.toggleSessionAgent(targetSessionId);
+      }
+      selectedQuickAction = '';
+      return;
+    }
+
     const actionMap: Record<string, { cmd: string; agentKind?: AgentKind }> = {
       agy: { cmd: 'agy\r', agentKind: 'antigravity' },
       opencode: { cmd: 'opencode\r', agentKind: 'opencode' },
@@ -158,7 +177,7 @@
     selectedQuickAction = '';
   }
 
-  // Real-time typed command agent detection
+  // Real-time typed command agent start/exit detection
   function detectAgentFromTypedInput(sessionId: string, data: string) {
     let buf = sessionInputBuffers.get(sessionId) || '';
     if (data === '\r' || data === '\n') {
@@ -168,29 +187,34 @@
 
       if (s) {
         if (firstWord === 'agy' || firstWord === 'antigravity') {
-          s.isAgent = true;
-          s.agentKind = 'antigravity';
-          if (s.title.startsWith('Terminal')) s.title = 'Antigravity (AGY)';
+          appState.setSessionAgent(sessionId, true, 'antigravity', s.title.startsWith('Terminal') ? 'Antigravity (AGY)' : undefined);
         } else if (firstWord === 'opencode') {
-          s.isAgent = true;
-          s.agentKind = 'opencode';
-          if (s.title.startsWith('Terminal')) s.title = 'OpenCode';
+          appState.setSessionAgent(sessionId, true, 'opencode', s.title.startsWith('Terminal') ? 'OpenCode' : undefined);
         } else if (firstWord === 'claude') {
-          s.isAgent = true;
-          s.agentKind = 'claude';
-          if (s.title.startsWith('Terminal')) s.title = 'Claude Code';
+          appState.setSessionAgent(sessionId, true, 'claude', s.title.startsWith('Terminal') ? 'Claude Code' : undefined);
         } else if (firstWord === 'aider') {
-          s.isAgent = true;
-          s.agentKind = 'aider';
-          if (s.title.startsWith('Terminal')) s.title = 'Aider AI';
+          appState.setSessionAgent(sessionId, true, 'aider', s.title.startsWith('Terminal') ? 'Aider AI' : undefined);
         } else if (firstWord === 'gemini') {
-          s.isAgent = true;
-          s.agentKind = 'gemini';
-          if (s.title.startsWith('Terminal')) s.title = 'Gemini CLI';
+          appState.setSessionAgent(sessionId, true, 'gemini', s.title.startsWith('Terminal') ? 'Gemini CLI' : undefined);
         } else if (firstWord === 'goose') {
-          s.isAgent = true;
-          s.agentKind = 'goose';
-          if (s.title.startsWith('Terminal')) s.title = 'Goose Agent';
+          appState.setSessionAgent(sessionId, true, 'goose', s.title.startsWith('Terminal') ? 'Goose Agent' : undefined);
+        } else if (['/exit', 'exit', '/quit', 'quit', ':q', ':exit', 'q'].includes(firstWord)) {
+          if (s.isAgent) {
+            // When an exit command is executed inside an agent session, reset agent status
+            appState.setSessionAgent(sessionId, false, 'shell');
+          }
+        }
+      }
+      sessionInputBuffers.set(sessionId, '');
+    } else if (data === '\u0003') {
+      // Ctrl+C pressed - clear typed buffer
+      sessionInputBuffers.set(sessionId, '');
+    } else if (data === '\u0004') {
+      // Ctrl+D (EOF/exit) on empty prompt line
+      if (buf.trim().length === 0) {
+        const s = appState.allSessions.find((session) => session.id === sessionId);
+        if (s?.isAgent) {
+          appState.setSessionAgent(sessionId, false, 'shell');
         }
       }
       sessionInputBuffers.set(sessionId, '');
@@ -413,6 +437,50 @@
 
     term.onResize(({ cols, rows }) => {
       resizePty(sessionId, cols, rows).catch(() => {});
+    });
+
+    term.onTitleChange((title) => {
+      if (!title || !title.trim()) return;
+      const cleanTitle = title.trim();
+      const lower = cleanTitle.toLowerCase();
+      const s = appState.allSessions.find((session) => session.id === sessionId);
+      if (!s) return;
+
+      if (lower.includes('claude')) {
+        appState.setSessionAgent(sessionId, true, 'claude', s.title.startsWith('Terminal') ? 'Claude Code' : undefined);
+      } else if (lower.includes('agy') || lower.includes('antigravity')) {
+        appState.setSessionAgent(sessionId, true, 'antigravity', s.title.startsWith('Terminal') ? 'Antigravity (AGY)' : undefined);
+      } else if (lower.includes('opencode')) {
+        appState.setSessionAgent(sessionId, true, 'opencode', s.title.startsWith('Terminal') ? 'OpenCode' : undefined);
+      } else if (lower.includes('aider')) {
+        appState.setSessionAgent(sessionId, true, 'aider', s.title.startsWith('Terminal') ? 'Aider AI' : undefined);
+      } else if (lower.includes('gemini')) {
+        appState.setSessionAgent(sessionId, true, 'gemini', s.title.startsWith('Terminal') ? 'Gemini CLI' : undefined);
+      } else if (lower.includes('goose')) {
+        appState.setSessionAgent(sessionId, true, 'goose', s.title.startsWith('Terminal') ? 'Goose Agent' : undefined);
+      } else if (
+        s.isAgent &&
+        (
+          lower === 'bash' ||
+          lower === 'zsh' ||
+          lower === 'fish' ||
+          lower === 'sh' ||
+          lower === 'pwsh' ||
+          lower === 'powershell' ||
+          lower === 'cmd.exe' ||
+          lower.endsWith('/bash') ||
+          lower.endsWith('/zsh') ||
+          lower.endsWith('/fish') ||
+          lower.endsWith('/sh') ||
+          lower.includes('@') ||
+          lower.startsWith('~') ||
+          lower.startsWith('/') ||
+          lower.startsWith('c:\\')
+        )
+      ) {
+        // Returned to standard shell prompt
+        appState.setSessionAgent(sessionId, false, 'shell');
+      }
     });
 
     const resizeObserver = new ResizeObserver(() => {
@@ -673,6 +741,67 @@
               updateScrollStatus(payload.session_id);
             });
           }
+
+          // 1. Check for OSC title sequences in raw output stream
+          const oscMatch = payload.data.match(/\x1b\](?:0|2);([^\x07\x1b]+)(?:\x07|\x1b\\)/);
+          if (oscMatch && oscMatch[1]) {
+            const oscTitle = oscMatch[1].toLowerCase().trim();
+            const s = appState.allSessions.find((session) => session.id === payload.session_id);
+            if (s) {
+              if (oscTitle.includes('claude')) {
+                appState.setSessionAgent(payload.session_id, true, 'claude');
+              } else if (oscTitle.includes('agy') || oscTitle.includes('antigravity')) {
+                appState.setSessionAgent(payload.session_id, true, 'antigravity');
+              } else if (oscTitle.includes('opencode')) {
+                appState.setSessionAgent(payload.session_id, true, 'opencode');
+              } else if (oscTitle.includes('aider')) {
+                appState.setSessionAgent(payload.session_id, true, 'aider');
+              } else if (oscTitle.includes('gemini')) {
+                appState.setSessionAgent(payload.session_id, true, 'gemini');
+              } else if (oscTitle.includes('goose')) {
+                appState.setSessionAgent(payload.session_id, true, 'goose');
+              } else if (
+                s.isAgent &&
+                (
+                  oscTitle === 'bash' ||
+                  oscTitle === 'zsh' ||
+                  oscTitle === 'fish' ||
+                  oscTitle === 'sh' ||
+                  oscTitle === 'pwsh' ||
+                  oscTitle === 'powershell' ||
+                  oscTitle === 'cmd.exe' ||
+                  oscTitle.endsWith('/bash') ||
+                  oscTitle.endsWith('/zsh') ||
+                  oscTitle.endsWith('/fish') ||
+                  oscTitle.endsWith('/sh') ||
+                  oscTitle.includes('@') ||
+                  oscTitle.startsWith('~') ||
+                  oscTitle.startsWith('/') ||
+                  oscTitle.startsWith('c:\\')
+                )
+              ) {
+                appState.setSessionAgent(payload.session_id, false, 'shell');
+              }
+            }
+          }
+
+          // 2. Check for agent exit farewell patterns in output text
+          const s = appState.allSessions.find((session) => session.id === payload.session_id);
+          if (s?.isAgent) {
+            if (
+              payload.data.includes('Goodbye!') ||
+              payload.data.includes('Bye!') ||
+              payload.data.includes('Exiting Claude') ||
+              payload.data.includes('Claude Code session ended') ||
+              payload.data.includes('Leaving Claude Code') ||
+              payload.data.includes('Antigravity session ended') ||
+              payload.data.includes('OpenCode session ended') ||
+              payload.data.includes('Aider session ended') ||
+              payload.data.includes('Goose session ended')
+            ) {
+              appState.setSessionAgent(payload.session_id, false, 'shell');
+            }
+          }
         }
       }
     );
@@ -681,6 +810,7 @@
       'pty-exit',
       (payload) => {
         if (payload?.session_id) {
+          appState.setSessionAgent(payload.session_id, false, 'shell');
           const st = terminalMap.get(payload.session_id);
           if (st) {
             st.term.write(`\r\n\x1b[33m[Process completed with exit code ${payload.exit_code}]\x1b[0m\r\n`, () => {
@@ -748,7 +878,7 @@
               appState.toggleSessionAgent(session.id);
             }}
             class="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-deck-border/60 transition shrink-0"
-            title={session.isAgent ? '🤖 AI Coding Agent Session (Click to toggle)' : '💻 Standard Shell (Click to mark as AI Agent)'}
+            title={session.isAgent ? '🤖 AI Coding Agent Session (Click to close agent status & reset to shell)' : '💻 Standard Shell (Click to mark as AI Agent)'}
           >
             {#if session.isAgent}
               <Bot class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 animate-pulse" />
@@ -865,6 +995,10 @@
             <option value="git_status">git status</option>
             <option value="git_diff">git diff</option>
             <option value="clear">clear terminal</option>
+          </optgroup>
+          <optgroup label="⚙️ Agent Session Status">
+            <option value="reset_shell">Reset Tab to Standard Shell</option>
+            <option value="toggle_agent">Toggle AI Agent Mark</option>
           </optgroup>
         </select>
       </div>

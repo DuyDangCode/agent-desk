@@ -1651,24 +1651,72 @@ class AppState {
     this.notifyResize();
   }
 
-  toggleSessionAgent(id: string) {
-    const s = this.sessions.find((session) => session.id === id);
-    if (s) {
-      s.isAgent = !s.isAgent;
-      if (s.isAgent && s.agentKind === 'shell') {
-        s.agentKind = 'custom';
+  setSessionAgent(
+    id: string, 
+    isAgent: boolean, 
+    agentKind: AgentKind = 'shell', 
+    title?: string
+  ) {
+    const s = this.allSessions.find((session) => session.id === id);
+    if (!s) return;
+
+    const changed = s.isAgent !== isAgent || s.agentKind !== (isAgent ? agentKind : 'shell') || (title && title.trim() !== s.title);
+    if (!changed) return;
+
+    s.isAgent = isAgent;
+    s.agentKind = isAgent ? agentKind : 'shell';
+    if (title && title.trim()) {
+      s.title = title.trim();
+    } else if (!isAgent) {
+      // If resetting to shell and title was an agent title, reset to a clean default
+      const isDefaultAgentTitle = [
+        'Antigravity (AGY)', 
+        'OpenCode', 
+        'Claude Code', 
+        'Aider AI', 
+        'Gemini CLI', 
+        'Goose Agent', 
+        'Custom Agent'
+      ].includes(s.title) || s.title.endsWith(' Agent');
+
+      if (isDefaultAgentTitle) {
+        const idx = this.sessions.findIndex((sess) => sess.id === id);
+        s.title = `Terminal (${idx >= 0 ? idx + 1 : 1})`;
       }
+    }
+
+    // Force reactive update across active project and standalone sessions
+    if (this.activeProject) {
+      this.activeProject.sessions = [...this.activeProject.sessions];
+    } else {
+      this.standaloneSessions = [...this.standaloneSessions];
+    }
+
+    this.notifyResize();
+  }
+
+  toggleSessionAgent(id: string) {
+    const s = this.allSessions.find((session) => session.id === id);
+    if (s) {
+      const nextIsAgent = !s.isAgent;
+      const nextKind: AgentKind = nextIsAgent ? (s.agentKind === 'shell' ? 'custom' : s.agentKind) : 'shell';
+      this.setSessionAgent(id, nextIsAgent, nextKind);
       this.showToast(
-        s.isAgent ? `Marked "${s.title}" as AI Agent Session` : `Marked "${s.title}" as Standard Shell`,
+        nextIsAgent ? `Marked "${s.title}" as AI Agent Session` : `Reset "${s.title}" to Standard Shell`,
         'info'
       );
     }
   }
 
   renameSession(id: string, newTitle: string) {
-    const target = this.sessions.find((s) => s.id === id);
+    const target = this.allSessions.find((s) => s.id === id);
     if (target && newTitle.trim()) {
       target.title = newTitle.trim();
+      if (this.activeProject) {
+        this.activeProject.sessions = [...this.activeProject.sessions];
+      } else {
+        this.standaloneSessions = [...this.standaloneSessions];
+      }
     }
   }
 

@@ -226,6 +226,72 @@ class TestAppState {
     return newId;
   }
 
+  get agentSessions(): PtySession[] {
+    return this.sessions.filter((s) => s.isAgent);
+  }
+
+  get hasAgents(): boolean {
+    return this.sessions.some((s) => s.isAgent);
+  }
+
+  setSessionAgent(
+    id: string,
+    isAgent: boolean,
+    agentKind: string = 'shell',
+    title?: string
+  ) {
+    const s = this.allSessions.find((session) => session.id === id);
+    if (!s) return;
+
+    s.isAgent = isAgent;
+    s.agentKind = isAgent ? agentKind : 'shell';
+    if (title && title.trim()) {
+      s.title = title.trim();
+    } else if (!isAgent) {
+      const isDefaultAgentTitle = [
+        'Antigravity (AGY)',
+        'OpenCode',
+        'Claude Code',
+        'Aider AI',
+        'Gemini CLI',
+        'Goose Agent',
+        'Custom Agent',
+      ].includes(s.title) || s.title.endsWith(' Agent');
+
+      if (isDefaultAgentTitle) {
+        const idx = this.sessions.findIndex((sess) => sess.id === id);
+        s.title = `Terminal (${idx >= 0 ? idx + 1 : 1})`;
+      }
+    }
+
+    if (this.activeProject) {
+      this.activeProject.sessions = [...this.activeProject.sessions];
+    } else {
+      this.standaloneSessions = [...this.standaloneSessions];
+    }
+  }
+
+  toggleSessionAgent(id: string) {
+    const s = this.allSessions.find((session) => session.id === id);
+    if (s) {
+      const nextIsAgent = !s.isAgent;
+      const nextKind = nextIsAgent ? (s.agentKind === 'shell' ? 'custom' : s.agentKind) : 'shell';
+      this.setSessionAgent(id, nextIsAgent, nextKind);
+    }
+  }
+
+  renameSession(id: string, newTitle: string) {
+    const target = this.allSessions.find((s) => s.id === id);
+    if (target && newTitle.trim()) {
+      target.title = newTitle.trim();
+      if (this.activeProject) {
+        this.activeProject.sessions = [...this.activeProject.sessions];
+      } else {
+        this.standaloneSessions = [...this.standaloneSessions];
+      }
+    }
+  }
+
   closeSession(id: string) {
     if (this.sessions.length <= 1) return;
     this.sessions = this.sessions.filter((s) => s.id !== id);
@@ -467,4 +533,133 @@ describe('Branch Management & Remote Branch Boundary Filtering', () => {
     });
   });
 });
+
+describe('Agent Session Lifecycle & Exit Status Reset', () => {
+  let state: TestAppState;
+  let projId: string;
+
+  beforeEach(() => {
+    state = new TestAppState();
+    projId = state.attachProject('/home/user/project_test');
+  });
+
+  describe('Agent Start Detection & State Transition', () => {
+    it('initially starts as standard shell', () => {
+      const session = state.sessions[0];
+      assert.equal(session.isAgent, false);
+      assert.equal(session.agentKind, 'shell');
+      assert.equal(state.hasAgents, false);
+      assert.equal(state.agentSessions.length, 0);
+    });
+
+    it('marks session as AI Agent and updates title and kind when launching Claude Code', () => {
+      const session = state.sessions[0];
+      state.setSessionAgent(session.id, true, 'claude', 'Claude Code');
+
+      assert.equal(session.isAgent, true);
+      assert.equal(session.agentKind, 'claude');
+      assert.equal(session.title, 'Claude Code');
+      assert.equal(state.hasAgents, true);
+      assert.equal(state.agentSessions.length, 1);
+      assert.equal(state.agentSessions[0].id, session.id);
+    });
+
+    it('marks session as AI Agent when launching AGY / Antigravity', () => {
+      const session = state.sessions[0];
+      state.setSessionAgent(session.id, true, 'antigravity', 'Antigravity (AGY)');
+
+      assert.equal(session.isAgent, true);
+      assert.equal(session.agentKind, 'antigravity');
+      assert.equal(session.title, 'Antigravity (AGY)');
+      assert.equal(state.hasAgents, true);
+    });
+  });
+
+  describe('Agent Exit & Terminal Status Reset', () => {
+    it('resets session status to shell and restores title when agent exits', () => {
+      const session = state.sessions[0];
+      // 1. Start agent
+      state.setSessionAgent(session.id, true, 'claude', 'Claude Code');
+      assert.equal(session.isAgent, true);
+      assert.equal(state.hasAgents, true);
+
+      // 2. Close / Exit agent (e.g. user typed /exit, process completed, or OSC title returned to shell)
+      state.setSessionAgent(session.id, false, 'shell');
+
+      assert.equal(session.isAgent, false);
+      assert.equal(session.agentKind, 'shell');
+      assert.equal(session.title, 'Terminal (1)');
+      assert.equal(state.hasAgents, false);
+      assert.equal(state.agentSessions.length, 0);
+    });
+
+    it('toggleSessionAgent correctly toggles between agent and standard shell', () => {
+      const session = state.sessions[0];
+      assert.equal(session.isAgent, false);
+
+      // Toggle ON
+      state.toggleSessionAgent(session.id);
+      assert.equal(session.isAgent, true);
+      assert.equal(state.hasAgents, true);
+
+      // Toggle OFF
+      state.toggleSessionAgent(session.id);
+      assert.equal(session.isAgent, false);
+      assert.equal(session.agentKind, 'shell');
+      assert.equal(state.hasAgents, false);
+    });
+  });
+
+  describe('Multi-Session Agent Isolation & Cleanup', () => {
+    it('correctly tracks hasAgents when multiple agent sessions exist and one is closed', () => {
+      // Create session 2
+      const s2Id = state.addTerminalSession('Terminal (2)');
+
+      const s1 = state.sessions[0];
+      const s2 = state.sessions[1];
+
+      // Mark both as agents
+      state.setSessionAgent(s1.id, true, 'claude', 'Claude Code');
+      state.setSessionAgent(s2.id, true, 'aider', 'Aider AI');
+
+      assert.equal(state.hasAgents, true);
+      assert.equal(state.agentSessions.length, 2);
+
+      // Close agent on s1 (e.g. user exits Claude)
+      state.setSessionAgent(s1.id, false, 'shell');
+      assert.equal(s1.isAgent, false);
+      assert.equal(s1.title, 'Terminal (1)');
+      // s2 is still an agent, so hasAgents must still be true
+      assert.equal(state.hasAgents, true);
+      assert.equal(state.agentSessions.length, 1);
+      assert.equal(state.agentSessions[0].id, s2.id);
+
+      // Close agent on s2 (e.g. user exits Aider)
+      state.setSessionAgent(s2.id, false, 'shell');
+      assert.equal(s2.isAgent, false);
+      assert.equal(s2.title, 'Terminal (2)');
+      assert.equal(state.hasAgents, false);
+      assert.equal(state.agentSessions.length, 0);
+    });
+
+    it('resets agent status in standalone session mode when no project is attached', () => {
+      // Close project to switch to standalone mode
+      state.closeAllProjects();
+      assert.equal(state.projects.length, 0);
+      assert.equal(state.sessions.length, 1);
+
+      const standaloneSession = state.sessions[0];
+      state.setSessionAgent(standaloneSession.id, true, 'gemini', 'Gemini CLI');
+      assert.equal(standaloneSession.isAgent, true);
+      assert.equal(state.hasAgents, true);
+
+      // Reset to shell
+      state.setSessionAgent(standaloneSession.id, false, 'shell');
+      assert.equal(standaloneSession.isAgent, false);
+      assert.equal(standaloneSession.title, 'Terminal (1)');
+      assert.equal(state.hasAgents, false);
+    });
+  });
+});
+
 
