@@ -179,6 +179,16 @@ pub fn unstage_file(path: String, relative_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn stage_files(path: String, relative_paths: Vec<String>) -> Result<(), String> {
+    GitEngine::stage_files(&path, &relative_paths)
+}
+
+#[tauri::command]
+pub fn unstage_files(path: String, relative_paths: Vec<String>) -> Result<(), String> {
+    GitEngine::unstage_files(&path, &relative_paths)
+}
+
+#[tauri::command]
 pub fn stage_all(path: String) -> Result<(), String> {
     GitEngine::stage_all(&path)
 }
@@ -247,3 +257,28 @@ pub fn stash_pop(path: String) -> Result<(), String> {
 pub fn list_stashes(path: String) -> Result<Vec<StashInfo>, String> {
     GitEngine::list_stashes(&path)
 }
+
+#[tauri::command]
+pub fn pull_repository(
+    path: String,
+    remote: Option<String>,
+    branch: Option<String>,
+) -> Result<String, String> {
+    GitEngine::pull(&path, remote.as_deref(), branch.as_deref())
+}
+
+#[tauri::command]
+pub fn push_repository(
+    path: String,
+    remote: Option<String>,
+    branch: Option<String>,
+    set_upstream: Option<bool>,
+) -> Result<String, String> {
+    GitEngine::push(
+        &path,
+        remote.as_deref(),
+        branch.as_deref(),
+        set_upstream.unwrap_or(false),
+    )
+}
+

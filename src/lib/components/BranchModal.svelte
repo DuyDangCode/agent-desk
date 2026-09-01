@@ -16,14 +16,19 @@
 
   let activeTab: 'branches' | 'stashes' = $state('branches');
   let branchSearchQuery = $state('');
+  let hideRemoteBranches = $state(true);
   let newBranchName = $state('');
   let stashMessage = $state('');
   let isSubmitting = $state(false);
 
   let filteredBranches = $derived.by(() => {
+    let list = appState.branches;
+    if (hideRemoteBranches) {
+      list = list.filter((b) => !b.is_remote);
+    }
     const q = branchSearchQuery.toLowerCase().trim();
-    if (!q) return appState.branches;
-    return appState.branches.filter((b) => b.name.toLowerCase().includes(q));
+    if (!q) return list;
+    return list.filter((b) => b.name.toLowerCase().includes(q));
   });
 
   async function handleCreateBranch() {
@@ -40,6 +45,8 @@
 
   async function handleCheckout(branchName: string) {
     if (isSubmitting) return;
+    const target = appState.branches.find((b) => b.name === branchName);
+    if (target?.is_remote) return;
     try {
       isSubmitting = true;
       await appState.checkoutBranch(branchName);
@@ -82,7 +89,7 @@
             Git Branches & Stashes
           </h2>
           <span class="text-xs font-mono px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300">
-            {appState.repoInfo?.branch || 'HEAD'}
+            {appState.repoInfo?.branch || (appState.activeProject ? 'HEAD' : 'No project attached')}
           </span>
         </div>
         <button
@@ -101,7 +108,7 @@
           class="pb-2.5 text-xs font-medium border-b-2 transition flex items-center space-x-1.5 cursor-pointer {activeTab === 'branches' ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400 font-semibold' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-deck-muted dark:hover:text-deck-text'}"
         >
           <GitBranch class="w-3.5 h-3.5" />
-          <span>Branches ({appState.branches.length})</span>
+          <span>Branches ({filteredBranches.length})</span>
         </button>
         <button
           onclick={() => (activeTab = 'stashes')}
@@ -136,15 +143,25 @@
             </button>
           </div>
 
-          <!-- Search Filter -->
-          <div class="relative">
-            <Search class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400 dark:text-deck-muted" />
-            <input
-              type="text"
-              bind:value={branchSearchQuery}
-              placeholder="Filter branches..."
-              class="w-full bg-slate-100 dark:bg-deck-bg border border-deck-border rounded-lg pl-8 pr-3 py-1.5 text-xs font-mono text-slate-900 dark:text-deck-bright placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
-            />
+          <!-- Search Filter & Hide Remote Option -->
+          <div class="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
+            <div class="relative flex-1">
+              <Search class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400 dark:text-deck-muted" />
+              <input
+                type="text"
+                bind:value={branchSearchQuery}
+                placeholder="Filter branches..."
+                class="w-full bg-slate-100 dark:bg-deck-bg border border-deck-border rounded-lg pl-8 pr-3 py-1.5 text-xs font-mono text-slate-900 dark:text-deck-bright placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+            <label class="flex items-center space-x-1.5 text-xs text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright cursor-pointer select-none shrink-0 px-1 py-1">
+              <input
+                type="checkbox"
+                bind:checked={hideRemoteBranches}
+                class="rounded border-deck-border text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 accent-blue-600 cursor-pointer"
+              />
+              <span>Hide remote branches</span>
+            </label>
           </div>
 
           <!-- Branch List -->
@@ -175,9 +192,40 @@
                   </div>
 
                   {#if branch.is_current}
-                    <span class="flex items-center space-x-1 text-[11px] text-blue-600 dark:text-blue-400 font-semibold shrink-0">
-                      <Check class="w-3.5 h-3.5" />
-                      <span>Current</span>
+                    <div class="flex items-center space-x-1.5 shrink-0">
+                      <button
+                        onclick={async () => {
+                          await appState.pullChanges();
+                        }}
+                        disabled={appState.isPulling || appState.isPushing}
+                        class="px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 text-[11px] font-medium transition cursor-pointer flex items-center space-x-1 disabled:opacity-50"
+                        title="Pull changes from remote (git pull)"
+                      >
+                        <ArrowDownToLine class="w-3 h-3 {appState.isPulling ? 'animate-bounce' : ''}" />
+                        <span>{appState.isPulling ? 'Pulling...' : 'Pull'}</span>
+                      </button>
+                      <button
+                        onclick={async () => {
+                          await appState.pushChanges();
+                        }}
+                        disabled={appState.isPulling || appState.isPushing}
+                        class="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 hover:bg-emerald-200 dark:hover:bg-emerald-800 text-emerald-800 dark:text-emerald-200 text-[11px] font-medium transition cursor-pointer flex items-center space-x-1 disabled:opacity-50"
+                        title="Push commits to remote (git push)"
+                      >
+                        <ArrowUpFromLine class="w-3 h-3 {appState.isPushing ? 'animate-bounce' : ''}" />
+                        <span>{appState.isPushing ? 'Pushing...' : 'Push'}</span>
+                      </button>
+                      <span class="flex items-center space-x-1 text-[11px] text-blue-600 dark:text-blue-400 font-semibold shrink-0 pl-1 border-l border-blue-200 dark:border-blue-800">
+                        <Check class="w-3.5 h-3.5" />
+                        <span>Current</span>
+                      </span>
+                    </div>
+                  {:else if branch.is_remote}
+                    <span
+                      class="px-2 py-0.5 rounded bg-slate-200/60 dark:bg-deck-surface text-slate-500 dark:text-deck-muted text-[10px] font-mono shrink-0 select-none border border-deck-border/40"
+                      title="Remote branches cannot be checked out directly. Create a local branch to checkout."
+                    >
+                      Remote only
                     </span>
                   {:else}
                     <button

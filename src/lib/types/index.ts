@@ -9,6 +9,8 @@ export interface RepoInfo {
   unstaged_count: number;
   untracked_count: number;
   is_dirty: boolean;
+  ahead_count?: number;
+  behind_count?: number;
 }
 
 export interface DiffToken {

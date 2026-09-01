@@ -12,7 +12,9 @@
     AlertCircle,
     Edit3,
     Archive,
-    ChevronDown
+    ChevronDown,
+    ArrowDown,
+    ArrowUp
   } from 'lucide-svelte';
 
   let customPath = $state('');
@@ -65,15 +67,21 @@
         <button
           onclick={() => appState.openFolderPicker()}
           class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-gray-100 dark:bg-deck-card hover:bg-gray-200 dark:hover:bg-deck-border/80 border border-deck-border text-xs text-slate-800 dark:text-deck-text transition cursor-pointer group"
-          title="Browse local folders to open Git repository"
+          title={appState.activeProject ? "Browse local folders to open Git repository" : "Attach a project workspace"}
         >
           <FolderGit2 class="w-3.5 h-3.5 text-slate-500 dark:text-deck-muted group-hover:text-blue-600 dark:group-hover:text-blue-400" />
           <span class="font-semibold text-slate-900 dark:text-deck-bright truncate max-w-[200px]">
-            {appState.repoInfo?.name || appState.activeProject?.name || 'Open Workspace'}
+            {appState.repoInfo?.name || appState.activeProject?.name || 'No project attached'}
           </span>
-          <span class="text-[11px] text-slate-500 dark:text-deck-muted truncate max-w-[140px] font-mono hidden md:inline">
-            {appState.repoPath}
-          </span>
+          {#if appState.activeProject}
+            <span class="text-[11px] text-slate-500 dark:text-deck-muted truncate max-w-[140px] font-mono hidden md:inline">
+              {appState.repoPath}
+            </span>
+          {:else}
+            <span class="text-[11px] text-slate-400 dark:text-deck-muted/80 truncate max-w-[160px] font-mono hidden md:inline">
+              (Click to attach)
+            </span>
+          {/if}
         </button>
 
         <!-- Quick Browse Button -->
@@ -166,16 +174,58 @@
         <RefreshCw class="w-3.5 h-3.5 {appState.isRefreshing || appState.isLoading ? 'animate-spin text-blue-500 dark:text-blue-400' : ''}" />
       </button>
 
+      <!-- Pull Button -->
+      <button
+        onclick={() => appState.pullChanges()}
+        disabled={appState.isPulling || appState.isPushing}
+        class="flex items-center space-x-1 px-2.5 py-1 rounded-md bg-gray-100 dark:bg-deck-card hover:bg-gray-200 dark:hover:bg-deck-border/80 border border-deck-border text-xs text-slate-800 dark:text-deck-text transition cursor-pointer font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Pull latest commits from remote (git pull)"
+      >
+        {#if appState.isPulling}
+          <RefreshCw class="w-3.5 h-3.5 animate-spin text-blue-600 dark:text-blue-400" />
+          <span>Pulling...</span>
+        {:else}
+          <ArrowDown class="w-3.5 h-3.5 text-slate-600 dark:text-deck-muted" />
+          <span>Pull</span>
+          {#if (appState.repoInfo.behind_count ?? 0) > 0}
+            <span class="text-[10px] font-mono px-1 py-0.2 bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 rounded font-bold">
+              ↓{appState.repoInfo.behind_count}
+            </span>
+          {/if}
+        {/if}
+      </button>
+
+      <!-- Push Button -->
+      <button
+        onclick={() => appState.pushChanges()}
+        disabled={appState.isPulling || appState.isPushing}
+        class="flex items-center space-x-1 px-2.5 py-1 rounded-md bg-gray-100 dark:bg-deck-card hover:bg-gray-200 dark:hover:bg-deck-border/80 border border-deck-border text-xs text-slate-800 dark:text-deck-text transition cursor-pointer font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Push local commits to remote (git push)"
+      >
+        {#if appState.isPushing}
+          <RefreshCw class="w-3.5 h-3.5 animate-spin text-blue-600 dark:text-blue-400" />
+          <span>Pushing...</span>
+        {:else}
+          <ArrowUp class="w-3.5 h-3.5 text-slate-600 dark:text-deck-muted" />
+          <span>Push</span>
+          {#if (appState.repoInfo.ahead_count ?? 0) > 0}
+            <span class="text-[10px] font-mono px-1 py-0.2 bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 rounded font-bold">
+              ↑{appState.repoInfo.ahead_count}
+            </span>
+          {/if}
+        {/if}
+      </button>
+
       <!-- Stage All / Commit Gate Trigger -->
       <div class="flex items-center space-x-2 pl-2 border-l border-deck-border">
-        {#if appState.repoInfo.unstaged_count > 0 || appState.repoInfo.untracked_count > 0}
+        {#if appState.filteredUnstagedFiles.length > 0}
           <button
             onclick={() => appState.stageAll()}
             class="px-2.5 py-1 bg-gray-100 dark:bg-deck-card hover:bg-gray-200 dark:hover:bg-deck-border text-slate-800 dark:text-deck-text text-xs rounded border border-deck-border transition flex items-center space-x-1.5 font-medium cursor-pointer"
-            title="Stage all modified and untracked files"
+            title="Stage all {appState.filteredUnstagedFiles.length} file{appState.filteredUnstagedFiles.length === 1 ? '' : 's'} in sidebar view"
           >
             <CheckSquare class="w-3.5 h-3.5" />
-            <span>Stage All</span>
+            <span>Stage All ({appState.filteredUnstagedFiles.length})</span>
           </button>
         {/if}
 
@@ -187,6 +237,20 @@
         >
           <Layers class="w-3.5 h-3.5" />
           <span>Commit ({appState.repoInfo.staged_count})</span>
+        </button>
+      </div>
+    {:else}
+      <!-- When no project is attached -->
+      <div class="flex items-center space-x-2 text-xs font-mono text-slate-500 dark:text-deck-muted">
+        <span class="px-2.5 py-1 rounded bg-slate-100 dark:bg-deck-card text-slate-600 dark:text-deck-muted border border-deck-border hidden sm:inline">
+          No project attached
+        </span>
+        <button
+          onclick={() => appState.openFolderPicker()}
+          class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs rounded-md shadow-xs transition flex items-center space-x-1.5 cursor-pointer"
+        >
+          <FolderOpen class="w-3.5 h-3.5" />
+          <span>Attach Project</span>
         </button>
       </div>
     {/if}

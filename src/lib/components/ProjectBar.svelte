@@ -54,6 +54,13 @@
     role="tablist"
     aria-label="Attached Projects Deck"
   >
+    {#if appState.projects.length === 0}
+      <div class="shrink-0 flex items-center space-x-1.5 px-3 py-1 text-xs rounded-lg bg-slate-200/70 dark:bg-deck-surface text-slate-600 dark:text-deck-muted border border-dashed border-slate-300 dark:border-deck-border/80">
+        <FolderGit2 class="w-3.5 h-3.5 text-slate-400 dark:text-deck-muted" />
+        <span class="font-medium text-slate-700 dark:text-deck-text">No project attached</span>
+      </div>
+    {/if}
+
     {#each appState.projects as project, idx (project.id)}
       {@const isActive = project.id === appState.activeProjectId}
       {@const hasAgents = project.sessions.some((s) => s.isAgent)}
@@ -119,20 +126,18 @@
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Clean working tree"></span>
         {/if}
 
-        <!-- Close / Detach Project Button -->
-        {#if appState.projects.length > 1}
-          <button
-            onclick={(e) => {
-              e.stopPropagation();
-              appState.closeProject(project.id);
-            }}
-            class="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-slate-300 dark:hover:bg-deck-card rounded text-slate-400 hover:text-rose-600 dark:text-deck-muted dark:hover:text-rose-400 transition ml-0.5 cursor-pointer"
-            title="Detach project from deck"
-            aria-label="Detach project {project.name}"
-          >
-            <X class="w-3 h-3" />
-          </button>
-        {/if}
+        <!-- Close / Detach Project Button (Available on all tabs) -->
+        <button
+          onclick={(e) => {
+            e.stopPropagation();
+            appState.closeProject(project.id);
+          }}
+          class="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-slate-300 dark:hover:bg-deck-card rounded text-slate-400 hover:text-rose-600 dark:text-deck-muted dark:hover:text-rose-400 transition ml-0.5 cursor-pointer"
+          title="Detach project from deck"
+          aria-label="Detach project {project.name}"
+        >
+          <X class="w-3 h-3" />
+        </button>
       </div>
     {/each}
 
@@ -140,7 +145,7 @@
     <button
       onclick={() => appState.openFolderPicker()}
       class="shrink-0 flex items-center space-x-1 px-2.5 py-1 text-xs rounded-lg bg-slate-200/80 dark:bg-deck-surface hover:bg-slate-300 dark:hover:bg-deck-card text-slate-700 hover:text-slate-900 dark:text-deck-text dark:hover:text-deck-bright border border-dashed border-slate-300 dark:border-deck-border transition cursor-pointer font-medium"
-      title="Attach another project repository (1-Click Folder Picker)"
+      title="Attach a project repository (Folder Picker)"
       aria-label="Attach project"
     >
       <Plus class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
@@ -149,7 +154,7 @@
   </div>
 
   <!-- Right: Scroll Right Button & Project Count -->
-  <div class="flex items-center space-x-1 shrink-0">
+  <div class="flex items-center space-x-2 shrink-0">
     <button
       onclick={scrollRight}
       class="p-1 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-200 dark:text-deck-muted dark:hover:text-deck-bright dark:hover:bg-deck-card transition hidden sm:flex items-center justify-center cursor-pointer"
@@ -159,9 +164,23 @@
       <ChevronRight class="w-3.5 h-3.5" />
     </button>
 
+    {#if appState.projects.length > 1}
+      <button
+        onclick={() => appState.closeAllProjects()}
+        class="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono text-slate-500 dark:text-deck-muted hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 dark:hover:border-rose-800/40 transition cursor-pointer"
+        title="Detach all attached projects"
+      >
+        Detach All
+      </button>
+    {/if}
+
     <div class="hidden lg:flex items-center space-x-1 text-[11px] font-mono text-slate-500 dark:text-deck-muted pl-2 border-l border-deck-border">
       <Layers class="w-3 h-3 text-slate-400 dark:text-deck-muted" />
-      <span>{appState.projects.length} {appState.projects.length === 1 ? 'project' : 'projects'} attached</span>
+      {#if appState.projects.length === 0}
+        <span>No project attached</span>
+      {:else}
+        <span>{appState.projects.length} {appState.projects.length === 1 ? 'project' : 'projects'} attached</span>
+      {/if}
     </div>
   </div>
 </div>

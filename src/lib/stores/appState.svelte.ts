@@ -17,6 +17,8 @@ import {
   getRepositoryDiffs,
   stageFile as apiStageFile,
   unstageFile as apiUnstageFile,
+  stageFiles as apiStageFiles,
+  unstageFiles as apiUnstageFiles,
   stageAll as apiStageAll,
   unstageAll as apiUnstageAll,
   stageHunk as apiStageHunk,
@@ -31,12 +33,15 @@ import {
   stashSave as apiStashSave,
   stashPop as apiStashPop,
   listStashes as apiListStashes,
+  pullRepository as apiPullRepository,
+  pushRepository as apiPushRepository,
   writePty,
   killPty,
   getDefaultWorkingDir,
   listDirectoryFolders,
   listenEvent
 } from '$lib/utils/tauri';
+import { resolveNextFileSelection } from '$lib/utils/fileSelection';
 
 const DIFF_VIEW_MODE_KEY = 'agentdeck_diff_view_mode';
 const DIFF_WRAP_LINES_KEY = 'agentdeck_diff_wrap_lines';
@@ -257,6 +262,15 @@ class AppState {
   // 1. Multi-Project Deck State
   projects = $state<ProjectItem[]>([]);
   activeProjectId = $state<string>('');
+  defaultTerminalPath = $state<string>('');
+
+  // Standalone sessions when NO project is attached
+  standaloneSessions = $state<PtySession[]>([]);
+  standaloneActiveSessionId = $state<string>('');
+  standaloneSecondarySessionId = $state<string | null>(null);
+  standaloneFocusedPane = $state<'primary' | 'secondary'>('primary');
+  standaloneTerminalLayout = $state<TerminalLayout>('single');
+  standaloneSplitPercent = $state<number>(getInitialTerminalSplit());
 
   // Global layout & UI preferences
   diffViewMode = $state<'split' | 'unified'>(getInitialDiffViewMode());
@@ -284,6 +298,8 @@ class AppState {
   branches = $state<BranchInfo[]>([]);
   stashes = $state<StashInfo[]>([]);
   isLoadingBranches = $state<boolean>(false);
+  isPulling = $state<boolean>(false);
+  isPushing = $state<boolean>(false);
 
   // Commit Panel & AI Generation
   commitPanelOpen = $state<boolean>(false);
@@ -367,12 +383,17 @@ class AppState {
   // -------------------------------------------------------------
   // Getters for Active Project (Seamless backward-compatible access)
   // -------------------------------------------------------------
+  get isProjectAttached(): boolean {
+    return this.projects.length > 0 && Boolean(this.activeProject);
+  }
+
   get activeProject(): ProjectItem | undefined {
+    if (this.projects.length === 0) return undefined;
     return this.projects.find((p) => p.id === this.activeProjectId) || this.projects[0];
   }
 
   get repoPath(): string {
-    return this.activeProject?.path || '';
+    return this.activeProject?.path || this.defaultTerminalPath || '';
   }
 
   get repoInfo(): RepoInfo | null {
@@ -424,11 +445,18 @@ class AppState {
   }
 
   get sessions(): PtySession[] {
-    return this.activeProject?.sessions || [];
+    if (this.activeProject) {
+      return this.activeProject.sessions;
+    }
+    return this.standaloneSessions;
   }
 
   set sessions(val: PtySession[]) {
-    if (this.activeProject) this.activeProject.sessions = val;
+    if (this.activeProject) {
+      this.activeProject.sessions = val;
+    } else {
+      this.standaloneSessions = val;
+    }
   }
 
   get allSessions(): PtySession[] {
@@ -436,6 +464,7 @@ class AppState {
     for (const p of this.projects) {
       list.push(...p.sessions);
     }
+    list.push(...this.standaloneSessions);
     return list;
   }
 
@@ -444,40 +473,70 @@ class AppState {
       const found = p.sessions.find((s) => s.id === sessionId);
       if (found) return found.cwd || p.path;
     }
-    return undefined;
+    const standaloneFound = this.standaloneSessions.find((s) => s.id === sessionId);
+    if (standaloneFound) return standaloneFound.cwd || this.defaultTerminalPath;
+    return this.defaultTerminalPath || undefined;
   }
 
   get activeSessionId(): string {
-    return this.activeProject?.activeSessionId || '';
+    if (this.activeProject) {
+      return this.activeProject.activeSessionId;
+    }
+    return this.standaloneActiveSessionId;
   }
 
   set activeSessionId(val: string) {
-    if (this.activeProject) this.activeProject.activeSessionId = val;
+    if (this.activeProject) {
+      this.activeProject.activeSessionId = val;
+    } else {
+      this.standaloneActiveSessionId = val;
+    }
   }
 
   get secondarySessionId(): string | null {
-    return this.activeProject?.secondarySessionId || null;
+    if (this.activeProject) {
+      return this.activeProject.secondarySessionId || null;
+    }
+    return this.standaloneSecondarySessionId;
   }
 
   set secondarySessionId(val: string | null) {
-    if (this.activeProject) this.activeProject.secondarySessionId = val;
+    if (this.activeProject) {
+      this.activeProject.secondarySessionId = val;
+    } else {
+      this.standaloneSecondarySessionId = val;
+    }
   }
 
   get focusedPane(): 'primary' | 'secondary' {
-    return this.activeProject?.focusedPane || 'primary';
+    if (this.activeProject) {
+      return this.activeProject.focusedPane || 'primary';
+    }
+    return this.standaloneFocusedPane;
   }
 
   set focusedPane(val: 'primary' | 'secondary') {
-    if (this.activeProject) this.activeProject.focusedPane = val;
+    if (this.activeProject) {
+      this.activeProject.focusedPane = val;
+    } else {
+      this.standaloneFocusedPane = val;
+    }
   }
 
   get terminalSplitPercent(): number {
-    return this.activeProject?.terminalSplitPercent ?? 50;
+    if (this.activeProject) {
+      return this.activeProject.terminalSplitPercent ?? 50;
+    }
+    return this.standaloneSplitPercent;
   }
 
   set terminalSplitPercent(val: number) {
     const clamped = Math.min(Math.max(val, 20), 80);
-    if (this.activeProject) this.activeProject.terminalSplitPercent = clamped;
+    if (this.activeProject) {
+      this.activeProject.terminalSplitPercent = clamped;
+    } else {
+      this.standaloneSplitPercent = clamped;
+    }
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem(TERMINAL_SPLIT_KEY, String(clamped));
@@ -486,11 +545,18 @@ class AppState {
   }
 
   get terminalLayout(): TerminalLayout {
-    return this.activeProject?.terminalLayout || 'single';
+    if (this.activeProject) {
+      return this.activeProject.terminalLayout || 'single';
+    }
+    return this.standaloneTerminalLayout;
   }
 
   set terminalLayout(val: TerminalLayout) {
-    if (this.activeProject) this.activeProject.terminalLayout = val;
+    if (this.activeProject) {
+      this.activeProject.terminalLayout = val;
+    } else {
+      this.standaloneTerminalLayout = val;
+    }
   }
 
   get focusedSessionId(): string {
@@ -549,6 +615,40 @@ class AppState {
     return Array.from(extSet).sort();
   }
 
+  get filteredFiles(): FileDiff[] {
+    const q = this.searchQuery.toLowerCase().trim();
+    const ext = this.fileExtensionFilter.toLowerCase();
+    return this.files.filter((file) => {
+      if (q && !file.path.toLowerCase().includes(q)) return false;
+      if (this.fileFilter === 'staged' && !file.is_staged) return false;
+      if (this.fileFilter === 'unstaged' && file.is_staged) return false;
+      if (ext !== 'all' && !file.path.toLowerCase().endsWith(ext)) return false;
+      return true;
+    });
+  }
+
+  get filteredStagedFiles(): FileDiff[] {
+    const q = this.searchQuery.toLowerCase().trim();
+    const ext = this.fileExtensionFilter.toLowerCase();
+    return this.files.filter((file) => {
+      if (!file.is_staged) return false;
+      if (q && !file.path.toLowerCase().includes(q)) return false;
+      if (ext !== 'all' && !file.path.toLowerCase().endsWith(ext)) return false;
+      return true;
+    });
+  }
+
+  get filteredUnstagedFiles(): FileDiff[] {
+    const q = this.searchQuery.toLowerCase().trim();
+    const ext = this.fileExtensionFilter.toLowerCase();
+    return this.files.filter((file) => {
+      if (file.is_staged) return false;
+      if (q && !file.path.toLowerCase().includes(q)) return false;
+      if (ext !== 'all' && !file.path.toLowerCase().endsWith(ext)) return false;
+      return true;
+    });
+  }
+
   // -------------------------------------------------------------
   // Toast Notifications
   // -------------------------------------------------------------
@@ -561,11 +661,44 @@ class AppState {
     }, 3500);
   }
 
+  ensureStandaloneSessions() {
+    if (this.standaloneSessions.length === 0) {
+      const initialSessionId = 'session-standalone-1';
+      this.standaloneSessions = [
+        {
+          id: initialSessionId,
+          title: 'Terminal (1)',
+          cwd: this.defaultTerminalPath,
+          active: true,
+          isAgent: false,
+          agentKind: 'shell',
+        },
+      ];
+      this.standaloneActiveSessionId = initialSessionId;
+      this.standaloneSecondarySessionId = null;
+      this.standaloneFocusedPane = 'primary';
+      this.standaloneTerminalLayout = 'single';
+      this.standaloneSplitPercent = getInitialTerminalSplit();
+    }
+  }
+
   // -------------------------------------------------------------
   // Workspace & Multi-Project Initialization
   // -------------------------------------------------------------
   async initWorkspace() {
-    // 1. Try restoring attached projects from localStorage
+    // 1. Fetch default working directory for fallback terminal path
+    try {
+      const defaultDir = await getDefaultWorkingDir();
+      if (defaultDir) {
+        this.defaultTerminalPath = defaultDir;
+      }
+    } catch (e: any) {
+      console.warn('Workspace default dir query error:', e?.message || e);
+    }
+
+    this.ensureStandaloneSessions();
+
+    // 2. Try restoring attached projects from localStorage
     let restoredPaths: string[] = [];
     let savedActiveId: string | null = null;
 
@@ -590,20 +723,17 @@ class AppState {
       }
       if (savedActiveId && this.projects.some((p) => p.id === savedActiveId)) {
         this.activeProjectId = savedActiveId;
+      } else if (this.projects.length > 0) {
+        this.activeProjectId = this.projects[0].id;
       }
     } else {
-      // Auto-load default directory
-      try {
-        const defaultDir = await getDefaultWorkingDir();
-        if (defaultDir) {
-          await this.attachProject(defaultDir, true);
-        }
-      } catch (e: any) {
-        console.warn('Workspace auto-init default dir error:', e?.message || e);
-      }
+      // First time / no projects attached: DO NOT auto-attach any project!
+      // App starts in clean "No project attached" state with default terminal path.
+      this.projects = [];
+      this.activeProjectId = '';
     }
 
-    // 2. Global listener for multi-path filesystem watcher events
+    // 3. Global listener for multi-path filesystem watcher events
     listenEvent<{ repo_path: string; changed_paths: string[] }>('repo-changed', (payload) => {
       if (payload?.repo_path) {
         this.handleRepoChangedEvent(payload.repo_path);
@@ -625,6 +755,7 @@ class AppState {
   // -------------------------------------------------------------
   async attachProject(path: string, switchTo = true): Promise<string> {
     const normPath = path.trim().replace(/\/+$/, '');
+    if (!normPath) return '';
     // Check if project is already attached
     const existing = this.projects.find(
       (p) => p.path.toLowerCase() === normPath.toLowerCase()
@@ -692,6 +823,7 @@ class AppState {
     }
 
     this.folderPickerOpen = false;
+    this.notifyResize();
     return projectId;
   }
 
@@ -736,11 +868,31 @@ class AppState {
         this.activeProjectId = nextProj.id;
       } else {
         this.activeProjectId = '';
+        this.ensureStandaloneSessions();
       }
     }
 
     this.saveProjects();
     this.showToast(`Detached project: ${project.name}`, 'info');
+    this.notifyResize();
+  }
+
+  async closeAllProjects() {
+    if (this.projects.length === 0) return;
+    const projectList = [...this.projects];
+    for (const project of projectList) {
+      for (const session of project.sessions) {
+        killPty(session.id).catch(() => {});
+      }
+      unwatchRepository(project.path).catch(() => {});
+    }
+
+    this.projects = [];
+    this.activeProjectId = '';
+    this.ensureStandaloneSessions();
+    this.saveProjects();
+    this.showToast('Detached all projects', 'info');
+    this.notifyResize();
   }
 
   cycleProject(direction: 1 | -1 = 1) {
@@ -794,19 +946,20 @@ class AppState {
 
       const diffData = await getRepositoryDiffs(project.path);
       project.info = diffData.info;
-      project.files = diffData.files;
 
-      if (project.files.length > 0) {
-        const stillExists = project.files.some(
-          (f) => f.path === project.selectedFilePath && f.is_staged === project.selectedIsStaged
-        );
-        if (!stillExists || !project.selectedFilePath) {
-          project.selectedFilePath = project.files[0].path;
-          project.selectedIsStaged = project.files[0].is_staged;
-        }
-      } else {
-        project.selectedFilePath = null;
-      }
+      const newSelection = resolveNextFileSelection({
+        oldSelectedPath: project.selectedFilePath,
+        oldSelectedIsStaged: project.selectedIsStaged,
+        previousFiles: project.files,
+        nextFiles: diffData.files,
+        searchQuery: project.searchQuery,
+        fileExtensionFilter: project.fileExtensionFilter,
+        fileFilter: project.fileFilter,
+      });
+
+      project.files = diffData.files;
+      project.selectedFilePath = newSelection.selectedFilePath;
+      project.selectedIsStaged = newSelection.selectedIsStaged;
     } catch (e: any) {
       console.warn(`Failed to refresh diffs for ${project.path}:`, e);
     } finally {
@@ -840,25 +993,55 @@ class AppState {
     }
   }
 
-  async stageAll() {
+  async stageAll(explicitFiles?: FileDiff[]) {
     if (!this.repoPath) return;
+    const targetFiles = explicitFiles || this.filteredUnstagedFiles;
+    if (targetFiles.length === 0) {
+      this.showToast('No unstaged files in the current view to stage', 'info');
+      return;
+    }
+
     try {
-      await apiStageAll(this.repoPath);
+      const isFiltered = Boolean(this.searchQuery.trim()) || this.fileExtensionFilter !== 'all';
+      const allUnstagedCount = this.files.filter((f) => !f.is_staged).length;
+
+      if (!isFiltered && targetFiles.length === allUnstagedCount) {
+        await apiStageAll(this.repoPath);
+      } else {
+        const paths = Array.from(new Set(targetFiles.map((f) => f.path)));
+        await apiStageFiles(this.repoPath, paths);
+      }
       await this.refreshDiffs(true);
-      this.showToast('Staged all modified files', 'success');
+      const count = targetFiles.length;
+      this.showToast(`Staged ${count} file${count === 1 ? '' : 's'}`, 'success');
     } catch (e: any) {
-      this.showToast(`Failed to stage all: ${e?.message || e}`, 'error');
+      this.showToast(`Failed to stage files: ${e?.message || e}`, 'error');
     }
   }
 
-  async unstageAll() {
+  async unstageAll(explicitFiles?: FileDiff[]) {
     if (!this.repoPath) return;
+    const targetFiles = explicitFiles || this.filteredStagedFiles;
+    if (targetFiles.length === 0) {
+      this.showToast('No staged files in the current view to unstage', 'info');
+      return;
+    }
+
     try {
-      await apiUnstageAll(this.repoPath);
+      const isFiltered = Boolean(this.searchQuery.trim()) || this.fileExtensionFilter !== 'all';
+      const allStagedCount = this.files.filter((f) => f.is_staged).length;
+
+      if (!isFiltered && targetFiles.length === allStagedCount) {
+        await apiUnstageAll(this.repoPath);
+      } else {
+        const paths = Array.from(new Set(targetFiles.map((f) => f.path)));
+        await apiUnstageFiles(this.repoPath, paths);
+      }
       await this.refreshDiffs(true);
-      this.showToast('Unstaged all files', 'success');
+      const count = targetFiles.length;
+      this.showToast(`Unstaged ${count} file${count === 1 ? '' : 's'}`, 'success');
     } catch (e: any) {
-      this.showToast(`Failed to unstage all: ${e?.message || e}`, 'error');
+      this.showToast(`Failed to unstage files: ${e?.message || e}`, 'error');
     }
   }
 
@@ -1065,6 +1248,11 @@ class AppState {
 
   async checkoutBranch(branchName: string) {
     if (!this.repoPath) return;
+    const targetBranch = this.branches.find((b) => b.name === branchName);
+    if (targetBranch?.is_remote) {
+      this.showToast(`Cannot checkout remote branch "${branchName}". Please create a local branch instead.`, 'error');
+      return;
+    }
     try {
       await apiCheckoutBranch(this.repoPath, branchName);
       await this.refreshDiffs(true);
@@ -1117,6 +1305,36 @@ class AppState {
       this.showToast('Popped latest stash', 'success');
     } catch (e: any) {
       this.showToast(`Stash pop failed: ${e?.message || e}`, 'error');
+    }
+  }
+
+  async pullChanges(remote?: string, branch?: string) {
+    if (!this.repoPath || this.isPulling) return;
+    try {
+      this.isPulling = true;
+      const msg = await apiPullRepository(this.repoPath, remote, branch);
+      await this.refreshDiffs(true);
+      await this.loadBranches();
+      this.showToast(msg || 'Pulled latest changes from remote', 'success');
+    } catch (e: any) {
+      this.showToast(`Pull failed: ${e?.message || e}`, 'error');
+    } finally {
+      this.isPulling = false;
+    }
+  }
+
+  async pushChanges(remote?: string, branch?: string, setUpstream = false) {
+    if (!this.repoPath || this.isPushing) return;
+    try {
+      this.isPushing = true;
+      const msg = await apiPushRepository(this.repoPath, remote, branch, setUpstream);
+      await this.refreshDiffs(true);
+      await this.loadBranches();
+      this.showToast(msg || 'Pushed commits to remote', 'success');
+    } catch (e: any) {
+      this.showToast(`Push failed: ${e?.message || e}`, 'error');
+    } finally {
+      this.isPushing = false;
     }
   }
 
@@ -1187,7 +1405,7 @@ class AppState {
         : `Lines ${this.steerContext.startLine}-${this.steerContext.endLine}`;
 
     const branch = this.repoInfo?.branch || 'HEAD';
-    const project = this.activeProject?.name || 'Workspace';
+    const project = this.activeProject?.name || 'No project attached';
 
     return template.template
       .replace(/\{\{file\}\}/g, this.steerContext.filePath)

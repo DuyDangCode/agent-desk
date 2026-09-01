@@ -79,6 +79,12 @@ struct FileActionReq {
 }
 
 #[derive(Debug, Deserialize)]
+struct FilesActionReq {
+    path: String,
+    relative_paths: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct HunkActionReq {
     path: String,
     relative_path: String,
@@ -123,6 +129,14 @@ struct StashReq {
     message: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct PushPullReq {
+    path: String,
+    remote: Option<String>,
+    branch: Option<String>,
+    set_upstream: Option<bool>,
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
@@ -142,6 +156,8 @@ async fn main() {
         .route("/api/repo/diffs", post(get_diffs_handler))
         .route("/api/repo/stage-file", post(stage_file_handler))
         .route("/api/repo/unstage-file", post(unstage_file_handler))
+        .route("/api/repo/stage-files", post(stage_files_handler))
+        .route("/api/repo/unstage-files", post(unstage_files_handler))
         .route("/api/repo/stage-all", post(stage_all_handler))
         .route("/api/repo/unstage-all", post(unstage_all_handler))
         .route("/api/repo/stage-hunk", post(stage_hunk_handler))
@@ -156,6 +172,8 @@ async fn main() {
         .route("/api/repo/stash-save", post(stash_save_handler))
         .route("/api/repo/stash-pop", post(stash_pop_handler))
         .route("/api/repo/stashes", post(list_stashes_handler))
+        .route("/api/repo/pull", post(pull_repo_handler))
+        .route("/api/repo/push", post(push_repo_handler))
         .route("/api/pty/spawn", post(spawn_pty_handler))
         .route("/api/pty/write", post(write_pty_handler))
         .route("/api/pty/resize", post(resize_pty_handler))
@@ -332,6 +350,22 @@ async fn unstage_file_handler(
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))
 }
 
+async fn stage_files_handler(
+    Json(req): Json<FilesActionReq>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    GitEngine::stage_files(&req.path, &req.relative_paths)
+        .map(|_| Json(serde_json::json!({ "success": true })))
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))
+}
+
+async fn unstage_files_handler(
+    Json(req): Json<FilesActionReq>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    GitEngine::unstage_files(&req.path, &req.relative_paths)
+        .map(|_| Json(serde_json::json!({ "success": true })))
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))
+}
+
 async fn stage_all_handler(
     Json(req): Json<RepoReq>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
@@ -442,6 +476,27 @@ async fn list_stashes_handler(
     GitEngine::list_stashes(&req.path)
         .map(Json)
         .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))
+}
+
+async fn pull_repo_handler(
+    Json(req): Json<PushPullReq>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    GitEngine::pull(&req.path, req.remote.as_deref(), req.branch.as_deref())
+        .map(|msg| Json(serde_json::json!({ "success": true, "message": msg })))
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))
+}
+
+async fn push_repo_handler(
+    Json(req): Json<PushPullReq>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    GitEngine::push(
+        &req.path,
+        req.remote.as_deref(),
+        req.branch.as_deref(),
+        req.set_upstream.unwrap_or(false),
+    )
+    .map(|msg| Json(serde_json::json!({ "success": true, "message": msg })))
+    .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))
 }
 
 async fn spawn_pty_handler(

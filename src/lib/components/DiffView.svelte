@@ -15,7 +15,8 @@
     Copy,
     X,
     MessageSquareQuote,
-    WrapText
+    WrapText,
+    FolderGit2
   } from 'lucide-svelte';
 
   const file = $derived(appState.selectedFileDiff);
@@ -640,6 +641,26 @@
         </div>
       {/if}
     {/if}
+  {:else if !appState.activeProject}
+    <!-- No Project Attached Empty State -->
+    <div class="h-full flex flex-col items-center justify-center text-slate-500 dark:text-deck-muted p-8 text-center space-y-4 select-none">
+      <div class="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-inner">
+        <FolderGit2 class="w-7 h-7" />
+      </div>
+      <div class="space-y-1.5 max-w-sm">
+        <h3 class="text-sm font-semibold text-slate-900 dark:text-deck-bright">No project attached</h3>
+        <p class="text-xs text-slate-500 dark:text-deck-muted leading-relaxed">
+          Attach a Git repository or folder workspace to review file diffs, stage changes, and steer AI coding agents.
+        </p>
+      </div>
+      <button
+        onclick={() => appState.openFolderPicker()}
+        class="inline-flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-lg font-medium shadow-md transition cursor-pointer"
+      >
+        <Plus class="w-3.5 h-3.5" />
+        <span>Attach Project</span>
+      </button>
+    </div>
   {:else}
     <!-- No File Selected Empty State -->
     <div class="h-full flex flex-col items-center justify-center text-slate-500 dark:text-deck-muted p-8 text-center space-y-3">

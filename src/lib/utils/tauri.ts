@@ -55,6 +55,8 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     get_repository_diffs: { url: `${SERVER_BASE}/api/repo/diffs`, method: 'POST' },
     stage_file: { url: `${SERVER_BASE}/api/repo/stage-file`, method: 'POST' },
     unstage_file: { url: `${SERVER_BASE}/api/repo/unstage-file`, method: 'POST' },
+    stage_files: { url: `${SERVER_BASE}/api/repo/stage-files`, method: 'POST' },
+    unstage_files: { url: `${SERVER_BASE}/api/repo/unstage-files`, method: 'POST' },
     stage_all: { url: `${SERVER_BASE}/api/repo/stage-all`, method: 'POST' },
     unstage_all: { url: `${SERVER_BASE}/api/repo/unstage-all`, method: 'POST' },
     stage_hunk: { url: `${SERVER_BASE}/api/repo/stage-hunk`, method: 'POST' },
@@ -69,6 +71,8 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     stash_save: { url: `${SERVER_BASE}/api/repo/stash-save`, method: 'POST' },
     stash_pop: { url: `${SERVER_BASE}/api/repo/stash-pop`, method: 'POST' },
     list_stashes: { url: `${SERVER_BASE}/api/repo/stashes`, method: 'POST' },
+    pull_repository: { url: `${SERVER_BASE}/api/repo/pull`, method: 'POST' },
+    push_repository: { url: `${SERVER_BASE}/api/repo/push`, method: 'POST' },
     unwatch_repository: { url: `${SERVER_BASE}/api/repo/unwatch`, method: 'POST' },
     spawn_pty: { url: `${SERVER_BASE}/api/pty/spawn`, method: 'POST' },
     write_pty: { url: `${SERVER_BASE}/api/pty/write`, method: 'POST' },
@@ -156,6 +160,38 @@ export async function unstageFile(path: string, relativePath: string): Promise<v
   return invoke<void>('unstage_file', { path, relative_path: relativePath, relativePath });
 }
 
+export async function stageFiles(path: string, relativePaths: string[]): Promise<void> {
+  if (!relativePaths || relativePaths.length === 0) return;
+  try {
+    return await invoke<void>('stage_files', { path, relative_paths: relativePaths, relativePaths });
+  } catch (e: any) {
+    const msg = e?.message || String(e);
+    if (msg.includes('404') || msg.includes('Not Found') || msg.includes('Unknown command') || msg.includes('not found')) {
+      for (const rel of relativePaths) {
+        await stageFile(path, rel);
+      }
+      return;
+    }
+    throw e;
+  }
+}
+
+export async function unstageFiles(path: string, relativePaths: string[]): Promise<void> {
+  if (!relativePaths || relativePaths.length === 0) return;
+  try {
+    return await invoke<void>('unstage_files', { path, relative_paths: relativePaths, relativePaths });
+  } catch (e: any) {
+    const msg = e?.message || String(e);
+    if (msg.includes('404') || msg.includes('Not Found') || msg.includes('Unknown command') || msg.includes('not found')) {
+      for (const rel of relativePaths) {
+        await unstageFile(path, rel);
+      }
+      return;
+    }
+    throw e;
+  }
+}
+
 export async function stageAll(path: string): Promise<void> {
   return invoke<void>('stage_all', { path });
 }
@@ -210,6 +246,33 @@ export async function stashPop(path: string): Promise<void> {
 
 export async function listStashes(path: string): Promise<StashInfo[]> {
   return invoke<StashInfo[]>('list_stashes', { path });
+}
+
+export async function pullRepository(
+  path: string,
+  remote?: string,
+  branch?: string
+): Promise<string> {
+  const res = await invoke<any>('pull_repository', { path, remote, branch });
+  if (typeof res === 'string') return res;
+  return res?.message || 'Pull successful';
+}
+
+export async function pushRepository(
+  path: string,
+  remote?: string,
+  branch?: string,
+  setUpstream?: boolean
+): Promise<string> {
+  const res = await invoke<any>('push_repository', {
+    path,
+    remote,
+    branch,
+    set_upstream: setUpstream,
+    setUpstream,
+  });
+  if (typeof res === 'string') return res;
+  return res?.message || 'Push successful';
 }
 
 export async function spawnPty(

@@ -16,29 +16,15 @@
     FileCode2,
     Layers,
     ChevronDown,
-    ChevronRight
+    ChevronRight,
+    FolderGit2
   } from 'lucide-svelte';
 
   let stagedCollapsed = $state(false);
   let unstagedCollapsed = $state(false);
 
-  const filteredFiles = $derived(
-    appState.files.filter((file) => {
-      const matchesSearch = file.path.toLowerCase().includes(appState.searchQuery.toLowerCase());
-      if (!matchesSearch) return false;
-      if (appState.fileFilter === 'staged' && !file.is_staged) return false;
-      if (appState.fileFilter === 'unstaged' && file.is_staged) return false;
-      if (appState.fileExtensionFilter !== 'all') {
-        if (!file.path.toLowerCase().endsWith(appState.fileExtensionFilter.toLowerCase())) {
-          return false;
-        }
-      }
-      return true;
-    })
-  );
-
-  const stagedFiles = $derived(filteredFiles.filter((f) => f.is_staged));
-  const unstagedFiles = $derived(filteredFiles.filter((f) => !f.is_staged));
+  const stagedFiles = $derived(appState.filteredStagedFiles);
+  const unstagedFiles = $derived(appState.filteredUnstagedFiles);
 
   function getStatusBadge(status: string) {
     switch (status) {
@@ -93,7 +79,7 @@
           onclick={() => (appState.fileFilter = 'all')}
           class="flex-1 py-1 rounded-md transition-all duration-150 text-center font-medium {appState.fileFilter === 'all' ? 'bg-white dark:bg-deck-card text-blue-600 dark:text-blue-400 shadow-xs font-semibold' : 'text-slate-500 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright hover:bg-gray-200/60 dark:hover:bg-deck-card/70'}"
         >
-          All ({appState.files.length})
+          All ({stagedFiles.length + unstagedFiles.length})
         </button>
         <button
           onclick={() => (appState.fileFilter = 'staged')}
@@ -159,10 +145,10 @@
           <button
             onclick={(e) => {
               e.stopPropagation();
-              appState.unstageAll();
+              appState.unstageAll(stagedFiles);
             }}
-            class="text-[10px] text-slate-400 hover:text-rose-600 dark:text-deck-muted dark:hover:text-rose-500 normal-case lowercase transition font-mono"
-            title="Unstage all"
+            class="text-[10px] text-slate-400 hover:text-rose-600 dark:text-deck-muted dark:hover:text-rose-500 normal-case lowercase transition font-mono cursor-pointer"
+            title="Unstage all files in view"
           >
             unstage all
           </button>
@@ -241,10 +227,10 @@
           <button
             onclick={(e) => {
               e.stopPropagation();
-              appState.stageAll();
+              appState.stageAll(unstagedFiles);
             }}
-            class="text-[10px] text-slate-400 hover:text-emerald-600 dark:text-deck-muted dark:hover:text-emerald-500 normal-case lowercase transition font-mono"
-            title="Stage all changes"
+            class="text-[10px] text-slate-400 hover:text-emerald-600 dark:text-deck-muted dark:hover:text-emerald-500 normal-case lowercase transition font-mono cursor-pointer"
+            title="Stage all files in view"
           >
             stage all
           </button>
@@ -310,7 +296,26 @@
     {/if}
 
     <!-- Empty State -->
-    {#if appState.files.length === 0}
+    {#if !appState.activeProject}
+      <div class="p-6 text-center text-deck-muted space-y-3 mt-6 select-none">
+        <div class="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto text-blue-600 dark:text-blue-400">
+          <FolderGit2 class="w-6 h-6" />
+        </div>
+        <div class="space-y-1">
+          <p class="text-xs font-semibold text-slate-800 dark:text-deck-bright">No project attached</p>
+          <p class="text-[11px] text-slate-500 dark:text-deck-muted leading-relaxed max-w-[200px] mx-auto">
+            Attach a local repository or folder to review changed files and stage hunks.
+          </p>
+        </div>
+        <button
+          onclick={() => appState.openFolderPicker()}
+          class="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-lg font-medium shadow-xs transition cursor-pointer"
+        >
+          <Plus class="w-3.5 h-3.5" />
+          <span>Attach Project</span>
+        </button>
+      </div>
+    {:else if appState.files.length === 0}
       <div class="p-8 text-center text-deck-muted space-y-2 mt-8">
         <FileCode2 class="w-8 h-8 mx-auto text-slate-400 dark:text-deck-muted/50" />
         <p class="text-xs font-semibold text-slate-800 dark:text-deck-bright">Working Tree Clean</p>

@@ -17,6 +17,10 @@ pub struct RepoInfo {
     pub unstaged_count: usize,
     pub untracked_count: usize,
     pub is_dirty: bool,
+    #[serde(default)]
+    pub ahead_count: usize,
+    #[serde(default)]
+    pub behind_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,6 +150,29 @@ impl GitEngine {
 
         let is_dirty = staged_count > 0 || unstaged_count > 0 || untracked_count > 0;
 
+        let mut ahead_count = 0;
+        let mut behind_count = 0;
+
+        if let Ok(head) = repo.head() {
+            if head.is_branch() {
+                if let Some(shorthand) = head.shorthand() {
+                    if let Ok(local_branch) = repo.find_branch(shorthand, git2::BranchType::Local) {
+                        if let Ok(upstream_branch) = local_branch.upstream() {
+                            if let (Some(local_oid), Some(upstream_oid)) = (
+                                local_branch.get().target(),
+                                upstream_branch.get().target(),
+                            ) {
+                                if let Ok((ahead, behind)) = repo.graph_ahead_behind(local_oid, upstream_oid) {
+                                    ahead_count = ahead;
+                                    behind_count = behind;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(RepoInfo {
             path: actual_path,
             name,
@@ -157,6 +184,8 @@ impl GitEngine {
             unstaged_count,
             untracked_count,
             is_dirty,
+            ahead_count,
+            behind_count,
         })
     }
 
@@ -522,7 +551,7 @@ impl GitEngine {
         None
     }
 
-    pub fn stage_file(repo_path: &str, relative_path: &str) -> Result<(), String> {
+    pub fn stage_files(repo_path: &str, relative_paths: &[String]) -> Result<(), String> {
         let repo = Repository::discover(repo_path)
             .map_err(|e| format!("Failed to discover git repo: {}", e))?;
         let mut index = repo
@@ -530,16 +559,18 @@ impl GitEngine {
             .map_err(|e| format!("Failed to get repo index: {}", e))?;
 
         let workdir = repo.workdir().unwrap_or_else(|| repo.path());
-        let full_path = workdir.join(relative_path);
 
-        if full_path.exists() {
-            index
-                .add_path(Path::new(relative_path))
-                .map_err(|e| format!("Failed to add path to index: {}", e))?;
-        } else {
-            index
-                .remove_path(Path::new(relative_path))
-                .map_err(|e| format!("Failed to remove path from index: {}", e))?;
+        for relative_path in relative_paths {
+            let full_path = workdir.join(relative_path);
+            if full_path.exists() {
+                index
+                    .add_path(Path::new(relative_path))
+                    .map_err(|e| format!("Failed to add path '{}' to index: {}", relative_path, e))?;
+            } else {
+                index
+                    .remove_path(Path::new(relative_path))
+                    .map_err(|e| format!("Failed to remove path '{}' from index: {}", relative_path, e))?;
+            }
         }
 
         index
@@ -548,30 +579,38 @@ impl GitEngine {
         Ok(())
     }
 
-    pub fn unstage_file(repo_path: &str, relative_path: &str) -> Result<(), String> {
+    pub fn unstage_files(repo_path: &str, relative_paths: &[String]) -> Result<(), String> {
         let repo = Repository::discover(repo_path)
             .map_err(|e| format!("Failed to discover git repo: {}", e))?;
 
         let head = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
 
         if let Some(commit) = head {
-            let _tree = commit
-                .tree()
-                .map_err(|e| format!("Failed to get head commit tree: {}", e))?;
-            repo.reset_default(Some(&commit.into_object()), &[Path::new(relative_path)])
-                .map_err(|e| format!("Failed to unstage path from head: {}", e))?;
+            let path_refs: Vec<&Path> = relative_paths.iter().map(|p| Path::new(p.as_str())).collect();
+            repo.reset_default(Some(&commit.into_object()), &path_refs)
+                .map_err(|e| format!("Failed to unstage paths from head: {}", e))?;
         } else {
             // Initial commit scenario - remove from index
             let mut index = repo
                 .index()
                 .map_err(|e| format!("Failed to get index: {}", e))?;
-            let _ = index.remove_path(Path::new(relative_path));
+            for relative_path in relative_paths {
+                let _ = index.remove_path(Path::new(relative_path));
+            }
             index
                 .write()
                 .map_err(|e| format!("Failed to write index: {}", e))?;
         }
 
         Ok(())
+    }
+
+    pub fn stage_file(repo_path: &str, relative_path: &str) -> Result<(), String> {
+        Self::stage_files(repo_path, &[relative_path.to_string()])
+    }
+
+    pub fn unstage_file(repo_path: &str, relative_path: &str) -> Result<(), String> {
+        Self::unstage_files(repo_path, &[relative_path.to_string()])
     }
 
     pub fn stage_all(repo_path: &str) -> Result<(), String> {
@@ -1164,11 +1203,33 @@ impl GitEngine {
         let repo = Repository::discover(repo_path)
             .map_err(|e| format!("Failed to discover git repo: {}", e))?;
 
-        let branch_ref = format!("refs/heads/{}", branch_name);
+        // Disallow checking out remote branches directly
+        if branch_name.starts_with("remotes/")
+            || branch_name.starts_with("refs/remotes/")
+            || repo.find_branch(branch_name, git2::BranchType::Remote).is_ok()
+        {
+            if repo.find_branch(branch_name, git2::BranchType::Local).is_err() {
+                return Err(format!(
+                    "Cannot checkout remote branch '{}'. Checking out remote branches directly is not allowed. Please create a local tracking branch.",
+                    branch_name
+                ));
+            }
+        }
+
+        // Verify local branch exists
+        let local_branch = repo
+            .find_branch(branch_name, git2::BranchType::Local)
+            .map_err(|_| format!("Local branch not found: '{}'", branch_name))?;
+
+        let branch_ref = local_branch
+            .get()
+            .name()
+            .ok_or_else(|| format!("Invalid reference for branch '{}'", branch_name))?
+            .to_string();
+
         let obj = repo
             .revparse_single(&branch_ref)
-            .or_else(|_| repo.revparse_single(branch_name))
-            .map_err(|e| format!("Branch not found '{}': {}", branch_name, e))?;
+            .map_err(|e| format!("Branch ref not found '{}': {}", branch_ref, e))?;
 
         let mut checkout_opts = git2::build::CheckoutBuilder::new();
         checkout_opts.safe();
@@ -1177,7 +1238,6 @@ impl GitEngine {
             .map_err(|e| format!("Failed to checkout tree for branch '{}': {}", branch_name, e))?;
 
         repo.set_head(&branch_ref)
-            .or_else(|_| repo.set_head(&format!("refs/heads/{}", branch_name)))
             .map_err(|e| format!("Failed to set HEAD to '{}': {}", branch_name, e))?;
 
         Ok(())
@@ -1241,6 +1301,135 @@ impl GitEngine {
         .map_err(|e| format!("Failed to list stashes: {}", e))?;
 
         Ok(stashes)
+    }
+
+    pub fn pull(repo_path: &str, remote: Option<&str>, branch: Option<&str>) -> Result<String, String> {
+        let repo = Repository::discover(repo_path)
+            .map_err(|e| format!("Failed to discover git repo: {}", e))?;
+        let workdir = repo.workdir().unwrap_or_else(|| repo.path()).to_path_buf();
+
+        let mut cmd = std::process::Command::new("git");
+        cmd.arg("-C").arg(&workdir).arg("pull");
+
+        if let Some(r) = remote {
+            if !r.trim().is_empty() {
+                cmd.arg(r.trim());
+            }
+        }
+        if let Some(b) = branch {
+            if !b.trim().is_empty() {
+                cmd.arg(b.trim());
+            }
+        }
+
+        let output = cmd.output().map_err(|e| format!("Failed to execute git pull: {}", e))?;
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+        if output.status.success() {
+            let msg = if !stdout.is_empty() {
+                stdout
+            } else if !stderr.is_empty() {
+                stderr
+            } else {
+                "Pull successful (already up to date)".to_string()
+            };
+            Ok(msg)
+        } else {
+            let err_msg = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                format!("git pull failed with status code {:?}", output.status.code())
+            };
+            Err(err_msg)
+        }
+    }
+
+    pub fn push(
+        repo_path: &str,
+        remote: Option<&str>,
+        branch: Option<&str>,
+        set_upstream: bool,
+    ) -> Result<String, String> {
+        let repo = Repository::discover(repo_path)
+            .map_err(|e| format!("Failed to discover git repo: {}", e))?;
+        let workdir = repo.workdir().unwrap_or_else(|| repo.path()).to_path_buf();
+
+        let mut cmd = std::process::Command::new("git");
+        cmd.arg("-C").arg(&workdir).arg("push");
+
+        if set_upstream {
+            cmd.arg("-u");
+        }
+
+        if let Some(r) = remote {
+            if !r.trim().is_empty() {
+                cmd.arg(r.trim());
+            }
+        }
+        if let Some(b) = branch {
+            if !b.trim().is_empty() {
+                cmd.arg(b.trim());
+            }
+        }
+
+        let output = cmd.output().map_err(|e| format!("Failed to execute git push: {}", e))?;
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+        if output.status.success() {
+            let msg = if !stderr.is_empty() && stdout.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                "Push successful (everything up-to-date)".to_string()
+            };
+            Ok(msg)
+        } else {
+            // Auto retry with -u origin <current_branch> if no upstream configured
+            if stderr.contains("no upstream branch") || stderr.contains("--set-upstream") {
+                if let Ok(head) = repo.head() {
+                    if let Some(shorthand) = head.shorthand() {
+                        let remote_name = remote.unwrap_or("origin");
+                        let mut retry_cmd = std::process::Command::new("git");
+                        retry_cmd
+                            .arg("-C")
+                            .arg(&workdir)
+                            .arg("push")
+                            .arg("-u")
+                            .arg(remote_name)
+                            .arg(shorthand);
+
+                        if let Ok(retry_output) = retry_cmd.output() {
+                            if retry_output.status.success() {
+                                let retry_stdout = String::from_utf8_lossy(&retry_output.stdout).trim().to_string();
+                                let retry_stderr = String::from_utf8_lossy(&retry_output.stderr).trim().to_string();
+                                let msg = if !retry_stderr.is_empty() {
+                                    retry_stderr
+                                } else if !retry_stdout.is_empty() {
+                                    retry_stdout
+                                } else {
+                                    format!("Pushed and set upstream to {}/{}", remote_name, shorthand)
+                                };
+                                return Ok(msg);
+                            }
+                        }
+                    }
+                }
+            }
+
+            let err_msg = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                format!("git push failed with status code {:?}", output.status.code())
+            };
+            Err(err_msg)
+        }
     }
 
     fn compute_intra_line_diffs(lines: &mut [DiffLine]) {
@@ -1557,5 +1746,100 @@ mod tests {
 
         let info = GitEngine::get_repo_info(path_str).unwrap();
         assert_eq!(info.head_commit_message, Some("Amended Initial commit".to_string()));
+    }
+
+    #[test]
+    fn test_push_and_pull() {
+        let bare_dir = tempfile::tempdir().unwrap();
+        let bare_path = bare_dir.path();
+        let _bare_repo = Repository::init_bare(bare_path).unwrap();
+
+        let (_tmp, client_path) = create_test_repo();
+        let client_path_str = client_path.to_str().unwrap();
+
+        // Add bare repo as origin
+        let client_repo = Repository::open(&client_path).unwrap();
+        client_repo.remote("origin", bare_path.to_str().unwrap()).unwrap();
+
+        // Push to origin
+        let push_res = GitEngine::push(client_path_str, Some("origin"), Some("master"), true)
+            .or_else(|_| GitEngine::push(client_path_str, Some("origin"), Some("main"), true));
+        assert!(push_res.is_ok());
+
+        // Pull from origin
+        let pull_res = GitEngine::pull(client_path_str, Some("origin"), None);
+        assert!(pull_res.is_ok());
+    }
+
+    #[test]
+    fn test_stage_and_unstage_multiple_files_batch() {
+        let (_tmp, path) = create_test_repo();
+        let path_str = path.to_str().unwrap();
+
+        let f1 = path.join("file1.txt");
+        let f2 = path.join("file2.txt");
+        let f3 = path.join("file3.txt");
+
+        fs::write(&f1, "content 1\n").unwrap();
+        fs::write(&f2, "content 2\n").unwrap();
+        fs::write(&f3, "content 3\n").unwrap();
+
+        let diffs_before = GitEngine::get_diffs(path_str).unwrap();
+        assert_eq!(diffs_before.files.iter().filter(|f| !f.is_staged).count(), 3);
+        assert_eq!(diffs_before.files.iter().filter(|f| f.is_staged).count(), 0);
+
+        // Stage 2 of the 3 files in a single batch
+        GitEngine::stage_files(path_str, &["file1.txt".to_string(), "file3.txt".to_string()]).unwrap();
+
+        let diffs_after = GitEngine::get_diffs(path_str).unwrap();
+        let staged_paths: Vec<String> = diffs_after.files.iter().filter(|f| f.is_staged).map(|f| f.path.clone()).collect();
+        let unstaged_paths: Vec<String> = diffs_after.files.iter().filter(|f| !f.is_staged).map(|f| f.path.clone()).collect();
+
+        assert_eq!(staged_paths.len(), 2);
+        assert!(staged_paths.contains(&"file1.txt".to_string()));
+        assert!(staged_paths.contains(&"file3.txt".to_string()));
+        assert_eq!(unstaged_paths.len(), 1);
+        assert!(unstaged_paths.contains(&"file2.txt".to_string()));
+
+        // Unstage batch
+        GitEngine::unstage_files(path_str, &["file1.txt".to_string(), "file3.txt".to_string()]).unwrap();
+
+        let diffs_final = GitEngine::get_diffs(path_str).unwrap();
+        assert_eq!(diffs_final.files.iter().filter(|f| f.is_staged).count(), 0);
+        assert_eq!(diffs_final.files.iter().filter(|f| !f.is_staged).count(), 3);
+    }
+
+    #[test]
+    fn test_checkout_remote_branch_disallowed() {
+        let bare_dir = tempfile::tempdir().unwrap();
+        let bare_path = bare_dir.path();
+        let _bare_repo = Repository::init_bare(bare_path).unwrap();
+
+        let (_tmp, client_path) = create_test_repo();
+        let client_path_str = client_path.to_str().unwrap();
+
+        // Add bare repo as origin
+        let client_repo = Repository::open(&client_path).unwrap();
+        client_repo.remote("origin", bare_path.to_str().unwrap()).unwrap();
+
+        // Push to origin
+        let push_res = GitEngine::push(client_path_str, Some("origin"), Some("master"), true)
+            .or_else(|_| GitEngine::push(client_path_str, Some("origin"), Some("main"), true));
+        assert!(push_res.is_ok());
+
+        let branches = GitEngine::list_branches(client_path_str).unwrap();
+        let remote_branch = branches.iter().find(|b| b.is_remote).expect("Expected a remote branch");
+        assert!(remote_branch.is_remote);
+
+        // Attempting to checkout remote branch directly must fail
+        let checkout_res = GitEngine::checkout_branch(client_path_str, &remote_branch.name);
+        assert!(checkout_res.is_err());
+        let err_msg = checkout_res.err().unwrap();
+        assert!(err_msg.contains("Cannot checkout remote branch"));
+
+        // Attempting nonexistent branch
+        let nonexist_res = GitEngine::checkout_branch(client_path_str, "nonexistent-branch-12345");
+        assert!(nonexist_res.is_err());
+        assert!(nonexist_res.err().unwrap().contains("Local branch not found"));
     }
 }

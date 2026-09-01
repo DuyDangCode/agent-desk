@@ -72,7 +72,7 @@
               Staged Files to Commit ({stagedFiles.length}):
             </span>
             <span class="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono">
-              Branch: {appState.repoInfo?.branch || 'HEAD'}
+              Branch: {appState.repoInfo?.branch || (appState.activeProject ? 'HEAD' : 'No project attached')}
             </span>
           </div>
 

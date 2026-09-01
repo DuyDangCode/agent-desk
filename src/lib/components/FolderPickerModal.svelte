@@ -350,7 +350,7 @@
                 </button>
               {/if}
 
-              {#if appState.repoPath}
+              {#if appState.activeProject}
                 <button
                   onclick={() => navigateTo(appState.repoPath)}
                   class="w-full flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-gray-100 dark:hover:bg-deck-card text-slate-700 dark:text-deck-text hover:text-slate-900 dark:hover:text-deck-bright transition text-left {listing?.current_path === appState.repoPath ? 'bg-gray-200 dark:bg-deck-card text-emerald-600 dark:text-emerald-400 font-semibold border-l-2 border-emerald-500' : ''}"

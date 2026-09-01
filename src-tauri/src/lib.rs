@@ -27,6 +27,8 @@ pub fn run() {
             get_repository_diffs,
             stage_file,
             unstage_file,
+            stage_files,
+            unstage_files,
             stage_all,
             unstage_all,
             stage_hunk,
@@ -40,7 +42,9 @@ pub fn run() {
             create_branch,
             stash_save,
             stash_pop,
-            list_stashes
+            list_stashes,
+            pull_repository,
+            push_repository
         ])
         .run(tauri::generate_context!())
         .expect("error while running agent-deck application");

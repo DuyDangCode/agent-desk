@@ -52,6 +52,8 @@ Targeted enhancements and architectural milestones planned for [Version 2.0.0](d
 ### 🛡️ Smart Git & AI Release Gate (Version 2.0)
 - **Added:** Automated conventional commit message synthesis (`feat:`, `fix:`, `refactor:`) from staged hunks via local LLM / OpenAI-compatible API bridge in `CommitPanel.svelte`.
 - **Added:** Branch switcher, branch creation modal, and stash manager (`BranchModal.svelte`) integrated into the top status bar.
+- **Added:** "Hide remote branches" filter toggle (default enabled) in `BranchModal.svelte` to isolate local working branches.
+- **Fixed:** Prevented direct checkout of remote Git branches across UI (`BranchModal.svelte`), state store (`appState.svelte.ts`), and backend Git engine (`src-tauri/src/git/mod.rs`), disallowing invalid remote checkouts and guiding users to local branches.
 
 ### 🔧 Bug Fixes & Refinements (Version 2.0)
 - **Enhanced:** Upgraded terminal syntax themes for **One Dark Pro**, **Dracula**, and **Nord Ice** with complete 16-color ANSI definitions, official background/foreground contrasts, matching cursor accents, and refined selection highlights.
