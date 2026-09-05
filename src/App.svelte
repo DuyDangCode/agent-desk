@@ -14,7 +14,7 @@
   import BranchModal from '$lib/components/BranchModal.svelte';
   import SettingsModal from '$lib/components/SettingsModal.svelte';
   import PromptTemplateModal from '$lib/components/PromptTemplateModal.svelte';
-  import { CheckCircle2, AlertCircle, Info, Terminal, GitCompare, Columns, Sparkles } from 'lucide-svelte';
+  import { CheckCircle2, AlertCircle, Info, Terminal, GitCompare, Columns, Sparkles, Loader2 } from 'lucide-svelte';
 
   // Resizable split pane width (percentage for left terminal pane)
   let splitPercent = $state(48);
@@ -58,6 +58,50 @@
       if (idx < appState.projects.length) {
         e.preventDefault();
         appState.selectProjectByIndex(idx);
+      }
+    }
+    // Terminal Tabs Cycling: Ctrl+Tab (forward), Ctrl+Shift+Tab (backward), Ctrl+PageDown/PageUp
+    else if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'Tab' || e.key === 'PageDown' || e.key === 'PageUp')) {
+      e.preventDefault();
+      const direction = (e.key === 'PageUp' || (e.key === 'Tab' && e.shiftKey)) ? -1 : 1;
+      appState.cycleSession(direction);
+    }
+    // Jump to terminal tab 1..9: Alt+1..9
+    else if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
+      const idx = parseInt(e.key) - 1;
+      if (idx < appState.sessions.length) {
+        e.preventDefault();
+        appState.selectSessionByIndex(idx);
+      }
+    }
+    // New Terminal Tab: Ctrl+Shift+` (using e.code === 'Backquote' for cross-browser/IME compatibility)
+    else if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === '`' || e.key === '~' || e.code === 'Backquote')) {
+      e.preventDefault();
+      appState.addTerminalSession();
+      appState.focusActiveTerminal();
+    }
+    // Close Terminal Tab: Ctrl+Shift+W
+    else if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'W' || e.key === 'w')) {
+      e.preventDefault();
+      appState.closeCurrentSession();
+    }
+    // Toggle / Focus Active Terminal: Ctrl+` (VS Code style toggle/focus)
+    else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === '`' || e.key === '~' || e.code === 'Backquote')) {
+      e.preventDefault();
+      if (!appState.showTerminal) {
+        appState.toggleTerminal(true);
+        setTimeout(() => appState.focusActiveTerminal(), 50);
+        appState.showToast('Terminal Cockpit Opened', 'info');
+      } else {
+        const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+        const isTerminalFocused = activeEl?.closest('.xterm') || activeEl?.classList.contains('xterm-helper-textarea');
+        if (isTerminalFocused) {
+          appState.toggleTerminal(false);
+          appState.showToast('Terminal Cockpit Hidden', 'info');
+        } else {
+          appState.focusActiveTerminal();
+          appState.showToast('Terminal Cockpit Focused', 'info');
+        }
       }
     }
     // Branch & Stashes Modal: Ctrl+Shift+B
@@ -237,11 +281,13 @@
   <!-- Toast Notification Overlay -->
   {#if appState.toastMessage}
     <div class="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-4 duration-200">
-      <div class="flex items-center space-x-2 px-3.5 py-2.5 rounded-lg shadow-xl border text-xs font-medium {appState.toastType === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/90 text-emerald-900 dark:text-emerald-200 border-emerald-300 dark:border-emerald-500/40' : appState.toastType === 'error' ? 'bg-rose-50 dark:bg-rose-950/90 text-rose-900 dark:text-rose-200 border-rose-300 dark:border-rose-500/40' : 'bg-white dark:bg-deck-card text-slate-900 dark:text-deck-bright border-deck-border'}">
+      <div class="flex items-center space-x-2 px-3.5 py-2.5 rounded-lg shadow-xl border text-xs font-medium {appState.toastType === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/90 text-emerald-900 dark:text-emerald-200 border-emerald-300 dark:border-emerald-500/40' : appState.toastType === 'error' ? 'bg-rose-50 dark:bg-rose-950/90 text-rose-900 dark:text-rose-200 border-rose-300 dark:border-rose-500/40' : appState.toastType === 'loading' ? 'bg-blue-50 dark:bg-blue-950/90 text-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-500/40' : 'bg-white dark:bg-deck-card text-slate-900 dark:text-deck-bright border-deck-border'}">
         {#if appState.toastType === 'success'}
           <CheckCircle2 class="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
         {:else if appState.toastType === 'error'}
           <AlertCircle class="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+        {:else if appState.toastType === 'loading'}
+          <Loader2 class="w-4 h-4 text-blue-600 dark:text-blue-400 animate-spin shrink-0" />
         {:else}
           <Info class="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
         {/if}

@@ -282,3 +282,37 @@ pub fn push_repository(
     )
 }
 
+#[tauri::command]
+pub fn create_directory(parent_path: String, name: String) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Directory name cannot be empty".to_string());
+    }
+    if name.contains('/') || name.contains('\\') || name.contains('\0') || name == "." || name == ".." {
+        return Err("Invalid directory name".to_string());
+    }
+    let target = PathBuf::from(&parent_path).join(name);
+    if target.exists() {
+        return Err(format!("Directory '{}' already exists", name));
+    }
+    fs::create_dir_all(&target)
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn init_repository(path: String) -> Result<RepoInfo, String> {
+    GitEngine::init_repo(&path)
+}
+
+#[tauri::command]
+pub fn read_file_content(path: String, relative_path: String) -> Result<String, String> {
+    let rel = std::path::Path::new(&relative_path);
+    if rel.is_absolute() || relative_path.contains("..") || relative_path.contains('\0') {
+        return Err("Invalid relative file path".to_string());
+    }
+    let full_path = PathBuf::from(&path).join(rel);
+    fs::read_to_string(&full_path).map_err(|e| format!("Failed to read file: {}", e))
+}
+
+

@@ -39,6 +39,8 @@ import {
   killPty,
   getDefaultWorkingDir,
   listDirectoryFolders,
+  createDirectory as apiCreateDirectory,
+  initRepository as apiInitRepository,
   listenEvent
 } from '$lib/utils/tauri';
 import { resolveNextFileSelection } from '$lib/utils/fileSelection';
@@ -375,7 +377,7 @@ class AppState {
 
   // Toast notifications
   toastMessage = $state<string | null>(null);
-  toastType = $state<'success' | 'info' | 'error'>('info');
+  toastType = $state<'success' | 'info' | 'error' | 'loading'>('info');
   private toastTimer: any = null;
 
   constructor() {}
@@ -652,13 +654,20 @@ class AppState {
   // -------------------------------------------------------------
   // Toast Notifications
   // -------------------------------------------------------------
-  showToast(message: string, type: 'success' | 'info' | 'error' = 'info') {
+  showToast(message: string, type: 'success' | 'info' | 'error' | 'loading' = 'info', duration = 3500) {
     this.toastMessage = message;
     this.toastType = type;
     if (this.toastTimer) clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => {
-      this.toastMessage = null;
-    }, 3500);
+    if (duration > 0) {
+      this.toastTimer = setTimeout(() => {
+        this.toastMessage = null;
+      }, duration);
+    }
+  }
+
+  hideToast() {
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toastMessage = null;
   }
 
   ensureStandaloneSessions() {
@@ -898,7 +907,8 @@ class AppState {
   cycleProject(direction: 1 | -1 = 1) {
     if (this.projects.length <= 1) return;
     const currentIdx = this.projects.findIndex((p) => p.id === this.activeProjectId);
-    const nextIdx = (currentIdx + direction + this.projects.length) % this.projects.length;
+    const startIdx = currentIdx >= 0 ? currentIdx : 0;
+    const nextIdx = (startIdx + direction + this.projects.length) % this.projects.length;
     this.switchProject(this.projects[nextIdx].id);
   }
 
@@ -1312,6 +1322,7 @@ class AppState {
     if (!this.repoPath || this.isPulling) return;
     try {
       this.isPulling = true;
+      this.showToast('Pulling latest changes from remote...', 'loading', 0);
       const msg = await apiPullRepository(this.repoPath, remote, branch);
       await this.refreshDiffs(true);
       await this.loadBranches();
@@ -1327,6 +1338,7 @@ class AppState {
     if (!this.repoPath || this.isPushing) return;
     try {
       this.isPushing = true;
+      this.showToast('Pushing code to remote...', 'loading', 0);
       const msg = await apiPushRepository(this.repoPath, remote, branch, setUpstream);
       await this.refreshDiffs(true);
       await this.loadBranches();
@@ -1542,7 +1554,7 @@ class AppState {
     targetPane: 'primary' | 'secondary' | 'auto' = 'auto'
   ): string {
     const count = this.sessions.length + 1;
-    const newId = `session-${this.activeProjectId || 'global'}-${Date.now()}`;
+    const newId = `session-${this.activeProjectId || 'global'}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const newSession: PtySession = {
       id: newId,
       title: title || (isAgent ? `${agentKind.toUpperCase()} Agent` : `Terminal (${count})`),
@@ -1725,6 +1737,7 @@ class AppState {
       this.activeSessionId = id;
       this.focusedPane = 'primary';
       this.sessions = this.sessions.map((s) => ({ ...s, active: s.id === id }));
+      this.notifyResize();
       return;
     }
 
@@ -1779,6 +1792,40 @@ class AppState {
     this.notifyResize();
   }
 
+  cycleSession(direction: 1 | -1 = 1) {
+    if (this.sessions.length <= 1) return;
+    const currentId = this.focusedSessionId;
+    const currentIdx = this.sessions.findIndex((s) => s.id === currentId);
+    const startIdx = currentIdx >= 0 ? currentIdx : 0;
+    const nextIdx = (startIdx + direction + this.sessions.length) % this.sessions.length;
+    this.setActiveSession(this.sessions[nextIdx].id);
+    this.focusActiveTerminal();
+  }
+
+  selectSessionByIndex(index: number) {
+    if (index >= 0 && index < this.sessions.length) {
+      this.setActiveSession(this.sessions[index].id);
+      this.focusActiveTerminal();
+    }
+  }
+
+  closeCurrentSession() {
+    const targetId = this.focusedSessionId;
+    if (targetId && this.sessions.length > 1) {
+      this.closeSession(targetId);
+      this.focusActiveTerminal();
+    }
+  }
+
+  focusActiveTerminal() {
+    if (!this.showTerminal) {
+      this.showTerminal = true;
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('focus-active-terminal'));
+    }
+  }
+
   // -------------------------------------------------------------
   // Folder Picker Navigation
   // -------------------------------------------------------------
@@ -1796,6 +1843,46 @@ class AppState {
       this.showToast(`Failed to list folders: ${e?.message || e}`, 'error');
     } finally {
       this.isLoadingDirs = false;
+    }
+  }
+
+  async createDirectory(parentPath: string, name: string): Promise<string> {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      this.showToast('Directory name cannot be empty', 'error');
+      throw new Error('Directory name cannot be empty');
+    }
+    if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('\0') || trimmed === '.' || trimmed === '..') {
+      this.showToast('Invalid directory name', 'error');
+      throw new Error('Invalid directory name');
+    }
+    try {
+      const createdPath = await apiCreateDirectory(parentPath, trimmed);
+      this.showToast(`Created folder "${trimmed}"`, 'success');
+      await this.browseDirectory(parentPath);
+      return createdPath;
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      this.showToast(`Failed to create directory: ${msg}`, 'error');
+      throw e;
+    }
+  }
+
+  async initRepository(path: string, autoAttach = false): Promise<RepoInfo> {
+    try {
+      const repo = await apiInitRepository(path);
+      this.showToast(`Initialized Git repository in ${repo.name || path}`, 'success');
+      if (this.directoryListing && this.directoryListing.current_path) {
+        await this.browseDirectory(this.directoryListing.current_path);
+      }
+      if (autoAttach) {
+        await this.attachProject(path, true);
+      }
+      return repo;
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      this.showToast(`Failed to initialize Git repository: ${msg}`, 'error');
+      throw e;
     }
   }
 

@@ -16,10 +16,21 @@
     X,
     MessageSquareQuote,
     WrapText,
-    FolderGit2
+    FolderGit2,
+    BookOpen,
+    Eye
   } from 'lucide-svelte';
+  import { isMarkdownFile } from '$lib/utils/markdown';
+  import { readFileContent } from '$lib/utils/tauri';
+  import MarkdownPreview from '$lib/components/MarkdownPreview.svelte';
 
   const file = $derived(appState.selectedFileDiff);
+  const isMarkdown = $derived(file ? isMarkdownFile(file.path) : false);
+
+  let markdownViewMode = $state<'diff' | 'preview' | 'side-by-side'>('diff');
+  let markdownRenderType = $state<'document' | 'diff'>('document');
+  let markdownFileContent = $state<string>('');
+  let isLoadingMarkdown = $state(false);
 
   // Multi-line selection state
   let selectedHunkIdx = $state<number | null>(null);
@@ -50,6 +61,47 @@
   $effect(() => {
     if (appState.selectedFilePath) {
       clearSelection();
+    }
+  });
+
+  function reconstructFromHunks(hunks: DiffHunk[]): string {
+    const lines: string[] = [];
+    for (const hunk of hunks) {
+      for (const line of hunk.lines) {
+        if (line.line_type === 'add' || line.line_type === 'context') {
+          lines.push(line.content);
+        }
+      }
+    }
+    return lines.join('\n');
+  }
+
+  async function loadMarkdownContent(currentFile: FileDiff) {
+    if (!currentFile) return;
+    try {
+      isLoadingMarkdown = true;
+      const repo = appState.repoPath;
+      if (repo && currentFile.status !== 'deleted') {
+        const text = await readFileContent(repo, currentFile.path);
+        markdownFileContent = text;
+        return;
+      }
+    } catch (err) {
+      console.warn('Could not read markdown file directly from disk, falling back to diff hunks:', err);
+    } finally {
+      isLoadingMarkdown = false;
+    }
+
+    markdownFileContent = reconstructFromHunks(currentFile.hunks);
+  }
+
+  $effect(() => {
+    const currentFile = file;
+    if (currentFile && isMarkdownFile(currentFile.path)) {
+      loadMarkdownContent(currentFile);
+    } else {
+      markdownFileContent = '';
+      markdownViewMode = 'diff';
     }
   });
 
@@ -266,6 +318,12 @@
           {getStatusLabel(file.status)}
         </span>
 
+        {#if isMarkdown}
+          <span class="text-[10px] px-1.5 py-0.5 rounded font-mono font-bold bg-blue-100 text-blue-800 border border-blue-300 dark:bg-blue-950/80 dark:text-blue-300 dark:border-blue-500/40">
+            MARKDOWN
+          </span>
+        {/if}
+
         <div class="flex items-center space-x-1.5 text-xs font-mono">
           {#if file.additions > 0}
             <span class="text-emerald-600 dark:text-emerald-400 font-semibold">+{file.additions}</span>
@@ -278,41 +336,73 @@
 
       <!-- Controls: Split/Unified Toggle & File Actions -->
       <div class="flex items-center space-x-2">
-        <!-- View Mode Toggle -->
-        <div class="flex items-center bg-gray-100 dark:bg-deck-card border border-deck-border rounded p-0.5 text-xs">
-          <button
-            onclick={() => {
-              clearSelection();
-              appState.setDiffViewMode('split');
-            }}
-            class="px-2 py-0.5 rounded flex items-center space-x-1 transition {appState.diffViewMode === 'split' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright'}"
-            title="Side-by-Side (Split) View"
-          >
-            <Columns class="w-3.5 h-3.5" />
-            <span class="hidden sm:inline">Split</span>
-          </button>
-          <button
-            onclick={() => {
-              clearSelection();
-              appState.setDiffViewMode('unified');
-            }}
-            class="px-2 py-0.5 rounded flex items-center space-x-1 transition {appState.diffViewMode === 'unified' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright'}"
-            title="Unified (Inline) View"
-          >
-            <AlignJustify class="w-3.5 h-3.5" />
-            <span class="hidden sm:inline">Unified</span>
-          </button>
-        </div>
+        {#if isMarkdown}
+          <!-- Markdown View Modes: Diff | Preview | Side-by-Side -->
+          <div class="flex items-center bg-gray-100 dark:bg-deck-card border border-deck-border rounded p-0.5 text-xs">
+            <button
+              onclick={() => (markdownViewMode = 'diff')}
+              class="px-2 py-0.5 rounded flex items-center space-x-1 transition cursor-pointer {markdownViewMode === 'diff' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright'}"
+              title="Standard code diff"
+            >
+              <FileCode class="w-3.5 h-3.5" />
+              <span>Diff</span>
+            </button>
+            <button
+              onclick={() => (markdownViewMode = 'preview')}
+              class="px-2 py-0.5 rounded flex items-center space-x-1 transition cursor-pointer {markdownViewMode === 'preview' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright'}"
+              title="Rendered Markdown Preview"
+            >
+              <BookOpen class="w-3.5 h-3.5" />
+              <span>Preview</span>
+            </button>
+            <button
+              onclick={() => (markdownViewMode = 'side-by-side')}
+              class="px-2 py-0.5 rounded flex items-center space-x-1 transition cursor-pointer {markdownViewMode === 'side-by-side' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright'}"
+              title="Diff and Rendered Markdown side-by-side"
+            >
+              <Columns class="w-3.5 h-3.5" />
+              <span class="hidden md:inline">Split Preview</span>
+            </button>
+          </div>
+        {/if}
 
-        <!-- Line Wrap Toggle -->
-        <button
-          onclick={() => appState.toggleWrapLines()}
-          class="px-2 py-1 rounded flex items-center space-x-1 text-xs border transition cursor-pointer {appState.wrapLines ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-500/40 font-medium' : 'bg-gray-100 dark:bg-deck-card text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright border-deck-border'}"
-          title={appState.wrapLines ? "Line wrapping is ON (click to disable wrapping and scroll horizontally, or press Alt+Z)" : "Line wrapping is OFF (click to wrap long lines, or press Alt+Z)"}
-        >
-          <WrapText class="w-3.5 h-3.5" />
-          <span class="hidden sm:inline">{appState.wrapLines ? 'Wrap' : 'No Wrap'}</span>
-        </button>
+        {#if !isMarkdown || markdownViewMode !== 'preview'}
+          <!-- View Mode Toggle -->
+          <div class="flex items-center bg-gray-100 dark:bg-deck-card border border-deck-border rounded p-0.5 text-xs">
+            <button
+              onclick={() => {
+                clearSelection();
+                appState.setDiffViewMode('split');
+              }}
+              class="px-2 py-0.5 rounded flex items-center space-x-1 transition {appState.diffViewMode === 'split' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright'}"
+              title="Side-by-Side (Split) View"
+            >
+              <Columns class="w-3.5 h-3.5" />
+              <span class="hidden sm:inline">Split</span>
+            </button>
+            <button
+              onclick={() => {
+                clearSelection();
+                appState.setDiffViewMode('unified');
+              }}
+              class="px-2 py-0.5 rounded flex items-center space-x-1 transition {appState.diffViewMode === 'unified' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright'}"
+              title="Unified (Inline) View"
+            >
+              <AlignJustify class="w-3.5 h-3.5" />
+              <span class="hidden sm:inline">Unified</span>
+            </button>
+          </div>
+
+          <!-- Line Wrap Toggle -->
+          <button
+            onclick={() => appState.toggleWrapLines()}
+            class="px-2 py-1 rounded flex items-center space-x-1 text-xs border transition cursor-pointer {appState.wrapLines ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-500/40 font-medium' : 'bg-gray-100 dark:bg-deck-card text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright border-deck-border'}"
+            title={appState.wrapLines ? "Line wrapping is ON (click to disable wrapping and scroll horizontally, or press Alt+Z)" : "Line wrapping is OFF (click to wrap long lines, or press Alt+Z)"}
+          >
+            <WrapText class="w-3.5 h-3.5" />
+            <span class="hidden sm:inline">{appState.wrapLines ? 'Wrap' : 'No Wrap'}</span>
+          </button>
+        {/if}
 
         <!-- Stage/Unstage File Button -->
         {#if file.is_staged}
@@ -361,8 +451,9 @@
       {/if}
     </div>
 
-    <!-- Diff Content Canvas -->
-    <div class="flex-1 overflow-auto font-mono text-xs p-3 space-y-4 pb-20">
+    <!-- Diff Content Canvas Snippet -->
+    {#snippet diffCanvas()}
+      <div class="flex-1 overflow-auto font-mono text-xs p-3 space-y-4 pb-20">
       {#if file.hunks.length === 0}
         <div class="p-8 text-center text-deck-muted space-y-2 border border-deck-border rounded-lg bg-gray-50 dark:bg-deck-card">
           <FileCode class="w-8 h-8 mx-auto text-deck-muted/40" />
@@ -597,6 +688,34 @@
         {/each}
       {/if}
     </div>
+  {/snippet}
+
+  {#if isMarkdown && markdownViewMode === 'preview'}
+    <MarkdownPreview
+      content={markdownFileContent}
+      hunks={file.hunks}
+      renderType={markdownRenderType}
+      onRenderTypeChange={(type) => (markdownRenderType = type)}
+      filePath={file.path}
+    />
+  {:else if isMarkdown && markdownViewMode === 'side-by-side'}
+    <div class="flex-1 flex min-h-0 overflow-hidden">
+      <div class="w-1/2 flex flex-col min-w-0 border-r border-deck-border overflow-hidden">
+        {@render diffCanvas()}
+      </div>
+      <div class="w-1/2 flex flex-col min-w-0 overflow-hidden">
+        <MarkdownPreview
+          content={markdownFileContent}
+          hunks={file.hunks}
+          renderType={markdownRenderType}
+          onRenderTypeChange={(type) => (markdownRenderType = type)}
+          filePath={file.path}
+        />
+      </div>
+    </div>
+  {:else}
+    {@render diffCanvas()}
+  {/if}
 
     <!-- Floating Multi-line Steer Action Bar -->
     {#if selectedLineCount > 0}

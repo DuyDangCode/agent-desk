@@ -44,7 +44,10 @@ pub fn run() {
             stash_pop,
             list_stashes,
             pull_repository,
-            push_repository
+            push_repository,
+            create_directory,
+            init_repository,
+            read_file_content
         ])
         .run(tauri::generate_context!())
         .expect("error while running agent-deck application");

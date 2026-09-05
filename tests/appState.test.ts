@@ -208,10 +208,184 @@ class TestAppState {
     this.ensureStandaloneSessions();
   }
 
+  switchProject(projectId: string) {
+    const target = this.projects.find((p) => p.id === projectId);
+    if (target) {
+      this.activeProjectId = target.id;
+    }
+  }
+
+  cycleProject(direction: 1 | -1 = 1) {
+    if (this.projects.length <= 1) return;
+    const currentIdx = this.projects.findIndex((p) => p.id === this.activeProjectId);
+    const startIdx = currentIdx >= 0 ? currentIdx : 0;
+    const nextIdx = (startIdx + direction + this.projects.length) % this.projects.length;
+    this.switchProject(this.projects[nextIdx].id);
+  }
+
+  selectProjectByIndex(index: number) {
+    if (index >= 0 && index < this.projects.length) {
+      this.switchProject(this.projects[index].id);
+    }
+  }
+
+  get focusedSessionId(): string {
+    if (this.terminalLayout !== 'single' && this.focusedPane === 'secondary' && this.secondarySessionId) {
+      return this.secondarySessionId;
+    }
+    return this.activeSessionId;
+  }
+
+  get terminalLayout(): 'single' | 'split-horizontal' | 'split-vertical' {
+    if (this.activeProject) return this.activeProject.terminalLayout;
+    return this.standaloneTerminalLayout;
+  }
+
+  set terminalLayout(val: 'single' | 'split-horizontal' | 'split-vertical') {
+    if (this.activeProject) this.activeProject.terminalLayout = val;
+    else this.standaloneTerminalLayout = val;
+  }
+
+  get secondarySessionId(): string | null {
+    if (this.activeProject) return this.activeProject.secondarySessionId || null;
+    return this.standaloneSecondarySessionId;
+  }
+
+  set secondarySessionId(val: string | null) {
+    if (this.activeProject) this.activeProject.secondarySessionId = val;
+    else this.standaloneSecondarySessionId = val;
+  }
+
+  get focusedPane(): 'primary' | 'secondary' {
+    if (this.activeProject) return this.activeProject.focusedPane || 'primary';
+    return this.standaloneFocusedPane;
+  }
+
+  set focusedPane(val: 'primary' | 'secondary') {
+    if (this.activeProject) this.activeProject.focusedPane = val;
+    else this.standaloneFocusedPane = val;
+  }
+
+  setActiveSession(id: string) {
+    if (this.terminalLayout === 'single') {
+      this.activeSessionId = id;
+      this.focusedPane = 'primary';
+      this.sessions = this.sessions.map((s) => ({ ...s, active: s.id === id }));
+      return;
+    }
+
+    if (id === this.activeSessionId) {
+      this.focusedPane = 'primary';
+    } else if (id === this.secondarySessionId) {
+      this.focusedPane = 'secondary';
+    } else {
+      if (this.focusedPane === 'secondary') {
+        this.secondarySessionId = id;
+      } else {
+        this.activeSessionId = id;
+      }
+    }
+    this.sessions = this.sessions.map((s) => ({
+      ...s,
+      active: s.id === this.activeSessionId || s.id === this.secondarySessionId,
+    }));
+  }
+
+  closeSession(id: string) {
+    if (this.sessions.length <= 1) return;
+    this.sessions = this.sessions.filter((s) => s.id !== id);
+
+    if (this.activeSessionId === id) {
+      const nextSession = this.sessions.find((s) => s.id !== this.secondarySessionId) || this.sessions[0];
+      if (nextSession) {
+        this.activeSessionId = nextSession.id;
+      }
+      if (this.secondarySessionId === this.activeSessionId) {
+        this.secondarySessionId = null;
+        this.terminalLayout = 'single';
+        this.focusedPane = 'primary';
+      }
+    }
+
+    if (this.secondarySessionId === id) {
+      const nextSession = this.sessions.find((s) => s.id !== this.activeSessionId);
+      if (nextSession) {
+        this.secondarySessionId = nextSession.id;
+      } else {
+        this.secondarySessionId = null;
+        this.terminalLayout = 'single';
+        this.focusedPane = 'primary';
+      }
+    }
+  }
+
+  cycleSession(direction: 1 | -1 = 1) {
+    if (this.sessions.length <= 1) return;
+    const currentId = this.focusedSessionId;
+    const currentIdx = this.sessions.findIndex((s) => s.id === currentId);
+    const startIdx = currentIdx >= 0 ? currentIdx : 0;
+    const nextIdx = (startIdx + direction + this.sessions.length) % this.sessions.length;
+    this.setActiveSession(this.sessions[nextIdx].id);
+  }
+
+  selectSessionByIndex(index: number) {
+    if (index >= 0 && index < this.sessions.length) {
+      this.setActiveSession(this.sessions[index].id);
+    }
+  }
+
+  closeCurrentSession() {
+    const targetId = this.focusedSessionId;
+    if (targetId && this.sessions.length > 1) {
+      this.closeSession(targetId);
+    }
+  }
+
+  mockDirs: Map<string, { path: string; name: string; is_git_repo: boolean }[]> = new Map();
+
+  createDirectory(parentPath: string, name: string): string {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      throw new Error('Directory name cannot be empty');
+    }
+    if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('\0') || trimmed === '.' || trimmed === '..') {
+      throw new Error('Invalid directory name');
+    }
+    const currentList = this.mockDirs.get(parentPath) || [];
+    if (currentList.some((d) => d.name === trimmed)) {
+      throw new Error(`Directory '${trimmed}' already exists`);
+    }
+    const newPath = `${parentPath.replace(/\/+$/, '')}/${trimmed}`;
+    currentList.push({
+      path: newPath,
+      name: trimmed,
+      is_git_repo: false,
+    });
+    this.mockDirs.set(parentPath, currentList);
+    this.mockDirs.set(newPath, []);
+    return newPath;
+  }
+
+  initRepository(path: string): { path: string; name: string; is_git_repo: true } {
+    const norm = path.trim().replace(/\/+$/, '');
+    for (const [, dirs] of this.mockDirs.entries()) {
+      const found = dirs.find((d) => d.path === norm);
+      if (found) {
+        found.is_git_repo = true;
+      }
+    }
+    const folderName = norm.split('/').filter(Boolean).pop() || 'Repository';
+    return {
+      path: norm,
+      name: folderName,
+      is_git_repo: true,
+    };
+  }
+
   addTerminalSession(title?: string): string {
     const count = this.sessions.length + 1;
     const prefix = this.activeProjectId || 'standalone';
-    const newId = `session-${prefix}-${Date.now()}`;
+    const newId = `session-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const cwd = this.activeProject?.path || this.defaultTerminalPath;
     const newSession: PtySession = {
       id: newId,
@@ -292,11 +466,67 @@ class TestAppState {
     }
   }
 
-  closeSession(id: string) {
-    if (this.sessions.length <= 1) return;
-    this.sessions = this.sessions.filter((s) => s.id !== id);
-    if (this.activeSessionId === id) {
-      this.activeSessionId = this.sessions[0]?.id || '';
+  // Toast notifications
+  toastMessage: string | null = null;
+  toastType: 'success' | 'info' | 'error' | 'loading' = 'info';
+  toastTimer: any = null;
+  isPushing = false;
+  isPulling = false;
+
+  showToast(message: string, type: 'success' | 'info' | 'error' | 'loading' = 'info', duration = 3500) {
+    this.toastMessage = message;
+    this.toastType = type;
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    if (duration > 0) {
+      this.toastTimer = setTimeout(() => {
+        this.toastMessage = null;
+      }, duration);
+    }
+  }
+
+  hideToast() {
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toastMessage = null;
+  }
+
+  async pushChanges(
+    remote?: string,
+    branch?: string,
+    setUpstream = false,
+    mockApiPush?: (repoPath: string, remote?: string, branch?: string, setUpstream?: boolean) => Promise<string>
+  ) {
+    if (!this.repoPath || this.isPushing) return;
+    try {
+      this.isPushing = true;
+      this.showToast('Pushing code to remote...', 'loading', 0);
+      const msg = mockApiPush
+        ? await mockApiPush(this.repoPath, remote, branch, setUpstream)
+        : 'Pushed commits to remote';
+      this.showToast(msg || 'Pushed commits to remote', 'success');
+    } catch (e: any) {
+      this.showToast(`Push failed: ${e?.message || e}`, 'error');
+    } finally {
+      this.isPushing = false;
+    }
+  }
+
+  async pullChanges(
+    remote?: string,
+    branch?: string,
+    mockApiPull?: (repoPath: string, remote?: string, branch?: string) => Promise<string>
+  ) {
+    if (!this.repoPath || this.isPulling) return;
+    try {
+      this.isPulling = true;
+      this.showToast('Pulling latest changes from remote...', 'loading', 0);
+      const msg = mockApiPull
+        ? await mockApiPull(this.repoPath, remote, branch)
+        : 'Pulled latest changes from remote';
+      this.showToast(msg || 'Pulled latest changes from remote', 'success');
+    } catch (e: any) {
+      this.showToast(`Pull failed: ${e?.message || e}`, 'error');
+    } finally {
+      this.isPulling = false;
     }
   }
 }
@@ -658,6 +888,431 @@ describe('Agent Session Lifecycle & Exit Status Reset', () => {
       assert.equal(standaloneSession.isAgent, false);
       assert.equal(standaloneSession.title, 'Terminal (1)');
       assert.equal(state.hasAgents, false);
+    });
+  });
+
+  describe('Project & Terminal Session Navigation Hotkey Logic', () => {
+    let state: TestAppState;
+
+    beforeEach(() => {
+      state = new TestAppState();
+      state.ensureStandaloneSessions();
+    });
+
+    describe('Project Navigation Boundary Tests', () => {
+      it('Lower Boundary: 0 projects attached does not crash or throw on cycle or index selection', () => {
+        assert.equal(state.projects.length, 0);
+        state.cycleProject(1);
+        assert.equal(state.activeProjectId, '');
+        state.cycleProject(-1);
+        assert.equal(state.activeProjectId, '');
+        state.selectProjectByIndex(0);
+        assert.equal(state.activeProjectId, '');
+        state.selectProjectByIndex(-1);
+        assert.equal(state.activeProjectId, '');
+      });
+
+      it('Lower Boundary: 1 project attached remains active when cycling or out-of-bound select', () => {
+        const p1 = state.attachProject('/workspace/alpha');
+        assert.equal(state.activeProjectId, p1);
+
+        state.cycleProject(1);
+        assert.equal(state.activeProjectId, p1);
+        state.cycleProject(-1);
+        assert.equal(state.activeProjectId, p1);
+
+        state.selectProjectByIndex(5); // out of bounds
+        assert.equal(state.activeProjectId, p1);
+        state.selectProjectByIndex(-1); // negative out of bounds
+        assert.equal(state.activeProjectId, p1);
+      });
+
+      it('In-Bound: cycles cleanly forward and backward between 3 projects', () => {
+        const p1 = state.attachProject('/workspace/alpha');
+        const p2 = state.attachProject('/workspace/beta');
+        const p3 = state.attachProject('/workspace/gamma');
+
+        // Start at p3 (since attachProject with switchTo=true sets it active)
+        assert.equal(state.activeProjectId, p3);
+
+        // Select p1 via index 0
+        state.selectProjectByIndex(0);
+        assert.equal(state.activeProjectId, p1);
+
+        // Cycle forward (+1): p1 -> p2
+        state.cycleProject(1);
+        assert.equal(state.activeProjectId, p2);
+
+        // Cycle forward (+1): p2 -> p3
+        state.cycleProject(1);
+        assert.equal(state.activeProjectId, p3);
+
+        // Cycle backward (-1): p3 -> p2
+        state.cycleProject(-1);
+        assert.equal(state.activeProjectId, p2);
+
+        // Direct index jump: index 2 -> p3
+        state.selectProjectByIndex(2);
+        assert.equal(state.activeProjectId, p3);
+      });
+
+      it('Upper Boundary: wraparound cycling at first and last projects', () => {
+        const p1 = state.attachProject('/workspace/alpha');
+        const p2 = state.attachProject('/workspace/beta');
+        const p3 = state.attachProject('/workspace/gamma');
+
+        // At p3 (last project), cycling forward wraps to p1
+        state.selectProjectByIndex(2);
+        assert.equal(state.activeProjectId, p3);
+        state.cycleProject(1);
+        assert.equal(state.activeProjectId, p1);
+
+        // At p1 (first project), cycling backward wraps to p3
+        state.cycleProject(-1);
+        assert.equal(state.activeProjectId, p3);
+      });
+    });
+
+    describe('Terminal Session Navigation Boundary Tests', () => {
+      it('Lower Boundary: 1 terminal session does not crash, cycle or close', () => {
+        assert.equal(state.sessions.length, 1);
+        const originalId = state.activeSessionId;
+
+        state.cycleSession(1);
+        assert.equal(state.activeSessionId, originalId);
+        state.cycleSession(-1);
+        assert.equal(state.activeSessionId, originalId);
+
+        state.selectSessionByIndex(-1);
+        assert.equal(state.activeSessionId, originalId);
+        state.selectSessionByIndex(5);
+        assert.equal(state.activeSessionId, originalId);
+
+        // closeCurrentSession must preserve the only session
+        state.closeCurrentSession();
+        assert.equal(state.sessions.length, 1);
+        assert.equal(state.activeSessionId, originalId);
+      });
+
+      it('In-Bound: cycles and selects terminal sessions in single layout', () => {
+        const s1 = state.activeSessionId;
+        const s2 = state.addTerminalSession('Terminal 2');
+        const s3 = state.addTerminalSession('Terminal 3');
+        assert.equal(state.sessions.length, 3);
+        assert.equal(state.focusedSessionId, s3);
+
+        // Select session 0 (s1)
+        state.selectSessionByIndex(0);
+        assert.equal(state.focusedSessionId, s1);
+
+        // Cycle forward (+1): s1 -> s2
+        state.cycleSession(1);
+        assert.equal(state.focusedSessionId, s2);
+
+        // Cycle forward (+1): s2 -> s3
+        state.cycleSession(1);
+        assert.equal(state.focusedSessionId, s3);
+
+        // Cycle backward (-1): s3 -> s2
+        state.cycleSession(-1);
+        assert.equal(state.focusedSessionId, s2);
+
+        // Close current session (s2)
+        state.closeCurrentSession();
+        assert.equal(state.sessions.length, 2);
+        assert.equal(state.sessions.some((s) => s.id === s2), false);
+      });
+
+      it('Upper Boundary: wraparound cycling at session boundaries', () => {
+        const s1 = state.activeSessionId;
+        const s2 = state.addTerminalSession('Terminal 2');
+        const s3 = state.addTerminalSession('Terminal 3');
+
+        // Jump to first session
+        state.selectSessionByIndex(0);
+        assert.equal(state.focusedSessionId, s1);
+
+        // Cycle backward wraps to last session (s3)
+        state.cycleSession(-1);
+        assert.equal(state.focusedSessionId, s3);
+
+        // Cycle forward wraps to first session (s1)
+        state.cycleSession(1);
+        assert.equal(state.focusedSessionId, s1);
+      });
+
+      it('Split Mode: handles session cycling and pane focus switching', () => {
+        const s1 = state.activeSessionId;
+        const s2 = state.addTerminalSession('Terminal 2');
+        const s3 = state.addTerminalSession('Terminal 3');
+
+        // Set layout to split-horizontal
+        state.terminalLayout = 'split-horizontal';
+        state.activeSessionId = s1;
+        state.secondarySessionId = s2;
+        state.focusedPane = 'primary';
+        assert.equal(state.focusedSessionId, s1);
+
+        // Selecting s2 (which is in secondary pane) should switch focus to secondary pane
+        state.setActiveSession(s2);
+        assert.equal(state.focusedPane, 'secondary');
+        assert.equal(state.focusedSessionId, s2);
+
+        // In secondary pane, cycle forward (+1) from s2 to s3
+        state.cycleSession(1);
+        assert.equal(state.secondarySessionId, s3);
+        assert.equal(state.focusedSessionId, s3);
+      });
+    });
+  });
+
+  describe('File Explorer: Create Directory & Init Git Operations', () => {
+    let state: TestAppState;
+
+    beforeEach(() => {
+      state = new TestAppState();
+      state.ensureStandaloneSessions();
+      state.mockDirs.set('/workspace', [
+        { path: '/workspace/existing-project', name: 'existing-project', is_git_repo: true },
+        { path: '/workspace/plain-folder', name: 'plain-folder', is_git_repo: false },
+      ]);
+    });
+
+    describe('Create Directory Boundary Tests', () => {
+      it('Lower Boundary: rejects empty or whitespace-only folder names', () => {
+        assert.throws(() => state.createDirectory('/workspace', ''), /cannot be empty/);
+        assert.throws(() => state.createDirectory('/workspace', '   '), /cannot be empty/);
+      });
+
+      it('Lower Boundary: rejects illegal characters and directory traversal attempts', () => {
+        assert.throws(() => state.createDirectory('/workspace', 'sub/dir'), /Invalid directory name/);
+        assert.throws(() => state.createDirectory('/workspace', 'sub\\dir'), /Invalid directory name/);
+        assert.throws(() => state.createDirectory('/workspace', '..'), /Invalid directory name/);
+        assert.throws(() => state.createDirectory('/workspace', '.'), /Invalid directory name/);
+        assert.throws(() => state.createDirectory('/workspace', 'null\0byte'), /Invalid directory name/);
+      });
+
+      it('In-Bound: creates a valid directory and updates parent listing', () => {
+        const newPath = state.createDirectory('/workspace', 'new-agent-space');
+        assert.equal(newPath, '/workspace/new-agent-space');
+
+        const dirs = state.mockDirs.get('/workspace') || [];
+        const created = dirs.find((d) => d.name === 'new-agent-space');
+        assert.ok(created);
+        assert.equal(created.is_git_repo, false);
+      });
+
+      it('Upper Boundary: rejects creating directory when name already exists', () => {
+        assert.throws(
+          () => state.createDirectory('/workspace', 'plain-folder'),
+          /already exists/
+        );
+      });
+    });
+
+    describe('Init Git Repository Boundary Tests', () => {
+      it('In-Bound: initializes git repository on a plain folder and marks is_git_repo', () => {
+        const plainFolder = state.mockDirs.get('/workspace')?.find((d) => d.name === 'plain-folder');
+        assert.ok(plainFolder);
+        assert.equal(plainFolder.is_git_repo, false);
+
+        const info = state.initRepository('/workspace/plain-folder');
+        assert.equal(info.name, 'plain-folder');
+        assert.equal(info.is_git_repo, true);
+
+        // Verification in parent directory listing
+        assert.equal(plainFolder.is_git_repo, true);
+      });
+
+      it('Upper Boundary: initializing git on an existing git repo succeeds idempotently', () => {
+        const info = state.initRepository('/workspace/existing-project');
+        assert.equal(info.name, 'existing-project');
+        assert.equal(info.is_git_repo, true);
+      });
+    });
+  });
+});
+
+describe('Push & Pull Code Loading Toast Notification Lifecycle', () => {
+  let state: TestAppState;
+
+  beforeEach(() => {
+    state = new TestAppState();
+  });
+
+  describe('Toast System Boundary Tests', () => {
+    it('Lower Boundary: duration = 0 sets persistent toast message and type without timer auto-clearing', () => {
+      state.showToast('Pushing code to remote...', 'loading', 0);
+      assert.equal(state.toastMessage, 'Pushing code to remote...');
+      assert.equal(state.toastType, 'loading');
+      assert.equal(state.toastTimer, null);
+    });
+
+    it('In-Bound: duration > 0 sets auto-dismiss timer that clears toastMessage', async () => {
+      state.showToast('Temporary alert', 'info', 20);
+      assert.equal(state.toastMessage, 'Temporary alert');
+      assert.equal(state.toastType, 'info');
+      assert.ok(state.toastTimer !== null);
+
+      await new Promise((resolve) => setTimeout(resolve, 35));
+      assert.equal(state.toastMessage, null);
+    });
+
+    it('In-Bound: supports all toast types including loading, success, error, info', () => {
+      const types: Array<'loading' | 'success' | 'error' | 'info'> = ['loading', 'success', 'error', 'info'];
+      for (const t of types) {
+        state.showToast(`Msg for ${t}`, t, 0);
+        assert.equal(state.toastMessage, `Msg for ${t}`);
+        assert.equal(state.toastType, t);
+      }
+    });
+
+    it('hideToast manually dismisses toast immediately and cancels active timer', () => {
+      state.showToast('Dismiss me', 'info', 5000);
+      assert.equal(state.toastMessage, 'Dismiss me');
+      assert.ok(state.toastTimer !== null);
+
+      state.hideToast();
+      assert.equal(state.toastMessage, null);
+    });
+  });
+
+  describe('Push Code Loading Toast Boundary Tests', () => {
+    it('Lower Boundary: empty repoPath avoids push and does not trigger toast', async () => {
+      state.defaultTerminalPath = '';
+      assert.equal(state.repoPath, '');
+
+      await state.pushChanges();
+      assert.equal(state.isPushing, false);
+      assert.equal(state.toastMessage, null);
+    });
+
+    it('Lower Boundary: already pushing flag avoids duplicate push execution or toast overwrite', async () => {
+      state.defaultTerminalPath = '/test/repo';
+      state.isPushing = true;
+      state.showToast('Initial toast', 'info', 0);
+
+      await state.pushChanges();
+      assert.equal(state.toastMessage, 'Initial toast');
+    });
+
+    it('In-Bound: displays loading toast while pushing code and transitions to success upon completion', async () => {
+      state.defaultTerminalPath = '/test/repo';
+
+      let resolvePush!: (msg: string) => void;
+      const pushPromiseDeferred = new Promise<string>((res) => {
+        resolvePush = res;
+      });
+
+      const pushPromise = state.pushChanges('origin', 'main', false, async () => {
+        return pushPromiseDeferred;
+      });
+
+      // While pushing is pending, loading toast is active and isPushing is true
+      assert.equal(state.isPushing, true);
+      assert.equal(state.toastMessage, 'Pushing code to remote...');
+      assert.equal(state.toastType, 'loading');
+      assert.equal(state.toastTimer, null); // Duration 0, no timer
+
+      // Complete the push
+      resolvePush('Pushed 3 commits to origin/main');
+      await pushPromise;
+
+      assert.equal(state.isPushing, false);
+      assert.equal(state.toastMessage, 'Pushed 3 commits to origin/main');
+      assert.equal(state.toastType, 'success');
+    });
+
+    it('Upper Boundary: transitions from loading toast to error toast on network or remote push rejection', async () => {
+      state.defaultTerminalPath = '/test/repo';
+
+      let rejectPush!: (err: Error) => void;
+      const pushPromiseDeferred = new Promise<string>((_, rej) => {
+        rejectPush = rej;
+      });
+
+      const pushPromise = state.pushChanges('origin', 'main', false, async () => {
+        return pushPromiseDeferred;
+      });
+
+      assert.equal(state.isPushing, true);
+      assert.equal(state.toastType, 'loading');
+
+      // Fail the push
+      rejectPush(new Error('Remote branch protected: forced update rejected'));
+      await pushPromise;
+
+      assert.equal(state.isPushing, false);
+      assert.equal(state.toastMessage, 'Push failed: Remote branch protected: forced update rejected');
+      assert.equal(state.toastType, 'error');
+    });
+  });
+
+  describe('Pull Code Loading Toast Boundary Tests', () => {
+    it('Lower Boundary: empty repoPath avoids pull and does not trigger toast', async () => {
+      state.defaultTerminalPath = '';
+      assert.equal(state.repoPath, '');
+
+      await state.pullChanges();
+      assert.equal(state.isPulling, false);
+      assert.equal(state.toastMessage, null);
+    });
+
+    it('Lower Boundary: already pulling flag avoids duplicate pull execution or toast overwrite', async () => {
+      state.defaultTerminalPath = '/test/repo';
+      state.isPulling = true;
+      state.showToast('Initial toast', 'info', 0);
+
+      await state.pullChanges();
+      assert.equal(state.toastMessage, 'Initial toast');
+    });
+
+    it('In-Bound: displays loading toast while pulling code and transitions to success upon completion', async () => {
+      state.defaultTerminalPath = '/test/repo';
+
+      let resolvePull!: (msg: string) => void;
+      const pullPromiseDeferred = new Promise<string>((res) => {
+        resolvePull = res;
+      });
+
+      const pullPromise = state.pullChanges('origin', 'main', async () => {
+        return pullPromiseDeferred;
+      });
+
+      assert.equal(state.isPulling, true);
+      assert.equal(state.toastMessage, 'Pulling latest changes from remote...');
+      assert.equal(state.toastType, 'loading');
+      assert.equal(state.toastTimer, null);
+
+      resolvePull('Fast-forward 2 commits');
+      await pullPromise;
+
+      assert.equal(state.isPulling, false);
+      assert.equal(state.toastMessage, 'Fast-forward 2 commits');
+      assert.equal(state.toastType, 'success');
+    });
+
+    it('Upper Boundary: transitions from loading toast to error toast on network or remote pull rejection', async () => {
+      state.defaultTerminalPath = '/test/repo';
+
+      let rejectPull!: (err: Error) => void;
+      const pullPromiseDeferred = new Promise<string>((_, rej) => {
+        rejectPull = rej;
+      });
+
+      const pullPromise = state.pullChanges('origin', 'main', async () => {
+        return pullPromiseDeferred;
+      });
+
+      assert.equal(state.isPulling, true);
+      assert.equal(state.toastType, 'loading');
+
+      rejectPull(new Error('Merge conflict in src/App.svelte'));
+      await pullPromise;
+
+      assert.equal(state.isPulling, false);
+      assert.equal(state.toastMessage, 'Pull failed: Merge conflict in src/App.svelte');
+      assert.equal(state.toastType, 'error');
     });
   });
 });

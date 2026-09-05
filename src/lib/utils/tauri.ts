@@ -78,6 +78,9 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     write_pty: { url: `${SERVER_BASE}/api/pty/write`, method: 'POST' },
     resize_pty: { url: `${SERVER_BASE}/api/pty/resize`, method: 'POST' },
     kill_pty: { url: `${SERVER_BASE}/api/pty/kill`, method: 'POST' },
+    create_directory: { url: `${SERVER_BASE}/api/fs/create-dir`, method: 'POST' },
+    init_repository: { url: `${SERVER_BASE}/api/repo/init`, method: 'POST' },
+    read_file_content: { url: `${SERVER_BASE}/api/fs/read-file`, method: 'POST' },
   };
 
   const target = endpointMap[cmd];
@@ -91,12 +94,18 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 
       if (!response.ok) {
         const errorText = await response.text();
+        if (response.status === 404) {
+          throw new Error(`Endpoint '${target.url}' not found (404). Please restart the backend server ('npm run server:dev') to load the latest backend routes.`);
+        }
         throw new Error(errorText || `Server returned ${response.status}`);
       }
 
       const json = await response.json();
       if (cmd === 'get_default_working_dir') {
         return json.path as T;
+      }
+      if (cmd === 'create_directory') {
+        return (typeof json === 'object' && json !== null && 'path' in json ? json.path : json) as T;
       }
       return json as T;
     } catch (e: any) {
@@ -138,6 +147,18 @@ export async function getDefaultWorkingDir(): Promise<string> {
 
 export async function listDirectoryFolders(path?: string): Promise<DirectoryListing> {
   return invoke<DirectoryListing>('list_directory_folders', { path });
+}
+
+export async function createDirectory(parentPath: string, name: string): Promise<string> {
+  return invoke<string>('create_directory', { parent_path: parentPath, parentPath, name });
+}
+
+export async function initRepository(path: string): Promise<RepoInfo> {
+  return invoke<RepoInfo>('init_repository', { path });
+}
+
+export async function readFileContent(path: string, relativePath: string): Promise<string> {
+  return invoke<string>('read_file_content', { path, relative_path: relativePath, relativePath });
 }
 
 export async function openRepository(path: string): Promise<RepoInfo> {

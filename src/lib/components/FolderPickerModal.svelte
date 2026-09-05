@@ -24,7 +24,9 @@
     Sparkles,
     FolderKanban,
     Compass,
-    Plus
+    Plus,
+    FolderPlus,
+    GitFork
   } from 'lucide-svelte';
 
   let searchQuery = $state('');
@@ -32,6 +34,10 @@
   let viewMode = $state<'list' | 'grid'>('list');
   let isEditingManualPath = $state(false);
   let manualPathInput = $state('');
+  let isCreatingFolder = $state(false);
+  let newFolderName = $state('');
+  let isSubmittingFolder = $state(false);
+  let isInitializingGit = $state(false);
 
   // History tracking for Back / Forward buttons
   let history = $state<string[]>([]);
@@ -98,8 +104,12 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
+      if (isCreatingFolder) {
+        isCreatingFolder = false;
+        return;
+      }
       appState.folderPickerOpen = false;
-    } else if (e.key === 'Enter' && !isEditingManualPath) {
+    } else if (e.key === 'Enter' && !isEditingManualPath && !isCreatingFolder) {
       if (selectedFolder) {
         enterDir(selectedFolder);
       } else {
@@ -169,6 +179,45 @@
     saveRecentRepo(dir.path);
     await appState.attachProject(dir.path, true);
     appState.folderPickerOpen = false;
+  }
+
+  async function handleCreateFolder(e?: Event) {
+    if (e) e.preventDefault();
+    const currentPath = listing?.current_path;
+    if (!currentPath) return;
+
+    const trimmed = newFolderName.trim();
+    if (!trimmed) return;
+
+    try {
+      isSubmittingFolder = true;
+      const createdPath = await appState.createDirectory(currentPath, trimmed);
+      newFolderName = '';
+      isCreatingFolder = false;
+      if (listing?.directories) {
+        const found = listing.directories.find((d) => d.path === createdPath);
+        if (found) selectedFolder = found;
+      }
+    } catch {
+      // Toast notification is shown by appState.createDirectory
+    } finally {
+      isSubmittingFolder = false;
+    }
+  }
+
+  async function handleInitGit(targetPath?: string, e?: MouseEvent) {
+    if (e) e.stopPropagation();
+    const path = targetPath || selectedFolder?.path || listing?.current_path;
+    if (!path) return;
+
+    try {
+      isInitializingGit = true;
+      await appState.initRepository(path);
+    } catch {
+      // Toast notification is shown by appState.initRepository
+    } finally {
+      isInitializingGit = false;
+    }
   }
 </script>
 
@@ -302,6 +351,31 @@
           {/if}
         </div>
 
+        <!-- Actions: New Folder & Init Git -->
+        <div class="flex items-center space-x-1 shrink-0">
+          <button
+            onclick={() => {
+              isCreatingFolder = !isCreatingFolder;
+              if (isCreatingFolder) newFolderName = '';
+            }}
+            class="h-8 px-2.5 rounded flex items-center space-x-1.5 text-xs font-medium border border-deck-border transition cursor-pointer {isCreatingFolder ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border-blue-400 dark:border-blue-500/50' : 'bg-white dark:bg-deck-surface hover:bg-gray-100 dark:hover:bg-deck-card text-slate-700 dark:text-deck-text hover:text-slate-900 dark:hover:text-deck-bright'}"
+            title="Create new directory in current path"
+          >
+            <FolderPlus class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <span class="hidden sm:inline">New Folder</span>
+          </button>
+
+          <button
+            onclick={() => handleInitGit()}
+            disabled={isInitializingGit || !listing?.current_path}
+            class="h-8 px-2.5 rounded flex items-center space-x-1.5 text-xs font-medium border border-deck-border bg-white dark:bg-deck-surface hover:bg-gray-100 dark:hover:bg-deck-card text-slate-700 dark:text-deck-text hover:text-slate-900 dark:hover:text-deck-bright disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+            title="Initialize Git repository in current folder"
+          >
+            <GitFork class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 {isInitializingGit ? 'animate-spin' : ''}" />
+            <span class="hidden sm:inline">Init Git</span>
+          </button>
+        </div>
+
         <!-- View Mode Toggles -->
         <div class="flex items-center bg-gray-100 dark:bg-deck-surface border border-deck-border rounded p-0.5 shrink-0">
           <button
@@ -400,6 +474,42 @@
 
         <!-- Right Main Panel: Folder Explorer Content -->
         <div class="flex-1 bg-white dark:bg-deck-bg p-4 overflow-y-auto flex flex-col">
+          <!-- Inline New Folder Bar -->
+          {#if isCreatingFolder}
+            <form
+              onsubmit={handleCreateFolder}
+              class="mb-3 p-2 rounded-lg border border-blue-200 dark:border-blue-500/40 bg-blue-50/50 dark:bg-blue-950/20 flex items-center space-x-2 shrink-0 animate-in fade-in slide-in-from-top-2 duration-150"
+            >
+              <FolderPlus class="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 ml-1" />
+              <input
+                type="text"
+                bind:value={newFolderName}
+                placeholder="New folder name..."
+                class="flex-1 bg-white dark:bg-deck-surface border border-deck-border rounded px-2.5 py-1 text-xs text-slate-900 dark:text-deck-bright placeholder-slate-400 dark:placeholder-deck-muted focus:outline-none focus:border-blue-500 font-mono"
+                autofocus
+                onkeydown={(e) => {
+                  if (e.key === 'Escape') {
+                    isCreatingFolder = false;
+                  }
+                }}
+              />
+              <button
+                type="submit"
+                disabled={!newFolderName.trim() || isSubmittingFolder}
+                class="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition cursor-pointer flex items-center space-x-1"
+              >
+                <span>Create</span>
+              </button>
+              <button
+                type="button"
+                onclick={() => (isCreatingFolder = false)}
+                class="px-2.5 py-1 bg-gray-100 dark:bg-deck-card hover:bg-gray-200 dark:hover:bg-deck-border text-slate-600 dark:text-deck-muted text-xs rounded transition cursor-pointer"
+              >
+                Cancel
+              </button>
+            </form>
+          {/if}
+
           {#if appState.isLoadingDirs}
             <div class="flex-1 flex flex-col items-center justify-center text-slate-500 dark:text-deck-muted space-y-2">
               <RefreshCw class="w-6 h-6 animate-spin text-blue-500 dark:text-blue-400" />
@@ -471,6 +581,16 @@
                           <Plus class="w-3 h-3" />
                           <span>Attach</span>
                         </button>
+                      {:else}
+                        <button
+                          onclick={(e) => handleInitGit(dir.path, e)}
+                          disabled={isInitializingGit}
+                          class="px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-[11px] text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 transition cursor-pointer flex items-center space-x-1 disabled:opacity-40"
+                          title="Initialize Git repository in this folder"
+                        >
+                          <GitFork class="w-3 h-3" />
+                          <span>Init Git</span>
+                        </button>
                       {/if}
                       <button
                         onclick={(e) => {
@@ -522,6 +642,16 @@
                       >
                         <Plus class="w-2.5 h-2.5" />
                         <span>Attach</span>
+                      </button>
+                    {:else}
+                      <button
+                        onclick={(e) => handleInitGit(dir.path, e)}
+                        disabled={isInitializingGit}
+                        class="mt-2 opacity-0 group-hover:opacity-100 px-2 py-0.5 bg-purple-600 hover:bg-purple-500 text-white rounded text-[10px] font-medium transition cursor-pointer flex items-center space-x-1 disabled:opacity-40"
+                        title="Initialize Git repository in this folder"
+                      >
+                        <GitFork class="w-2.5 h-2.5" />
+                        <span>Init Git</span>
                       </button>
                     {/if}
                   </div>

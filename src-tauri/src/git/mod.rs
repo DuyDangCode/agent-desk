@@ -92,6 +92,17 @@ pub struct StashInfo {
 pub struct GitEngine;
 
 impl GitEngine {
+    pub fn init_repo(repo_path: &str) -> Result<RepoInfo, String> {
+        let path = Path::new(repo_path);
+        if !path.exists() {
+            std::fs::create_dir_all(path)
+                .map_err(|e| format!("Failed to create directory '{}': {}", repo_path, e))?;
+        }
+        let _repo = Repository::init(repo_path)
+            .map_err(|e| format!("Failed to initialize git repository at '{}': {}", repo_path, e))?;
+        Self::get_repo_info(repo_path)
+    }
+
     pub fn get_repo_info(repo_path: &str) -> Result<RepoInfo, String> {
         let repo = Repository::discover(repo_path)
             .map_err(|e| format!("Failed to discover git repository at '{}': {}", repo_path, e))?;

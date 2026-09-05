@@ -407,6 +407,31 @@
                 </div>
 
                 <div class="flex items-center justify-between px-3.5 py-2.5">
+                  <span class="text-slate-800 dark:text-deck-text font-medium">Cycle Terminal Tabs</span>
+                  <kbd class="px-2 py-0.5 bg-white dark:bg-deck-card border border-deck-border rounded text-[11px] font-mono text-slate-900 dark:text-deck-bright font-semibold shadow-xs">Ctrl + Tab / Ctrl + Shift + Tab</kbd>
+                </div>
+
+                <div class="flex items-center justify-between px-3.5 py-2.5">
+                  <span class="text-slate-800 dark:text-deck-text font-medium">Switch to Terminal Tab 1..9</span>
+                  <kbd class="px-2 py-0.5 bg-white dark:bg-deck-card border border-deck-border rounded text-[11px] font-mono text-slate-900 dark:text-deck-bright font-semibold shadow-xs">Alt + 1..9</kbd>
+                </div>
+
+                <div class="flex items-center justify-between px-3.5 py-2.5">
+                  <span class="text-slate-800 dark:text-deck-text font-medium">Open New Terminal Tab</span>
+                  <kbd class="px-2 py-0.5 bg-white dark:bg-deck-card border border-deck-border rounded text-[11px] font-mono text-slate-900 dark:text-deck-bright font-semibold shadow-xs">Ctrl + Shift + `</kbd>
+                </div>
+
+                <div class="flex items-center justify-between px-3.5 py-2.5">
+                  <span class="text-slate-800 dark:text-deck-text font-medium">Close Current Terminal Tab</span>
+                  <kbd class="px-2 py-0.5 bg-white dark:bg-deck-card border border-deck-border rounded text-[11px] font-mono text-slate-900 dark:text-deck-bright font-semibold shadow-xs">Ctrl + Shift + W</kbd>
+                </div>
+
+                <div class="flex items-center justify-between px-3.5 py-2.5">
+                  <span class="text-slate-800 dark:text-deck-text font-medium">Toggle / Focus Active Terminal</span>
+                  <kbd class="px-2 py-0.5 bg-white dark:bg-deck-card border border-deck-border rounded text-[11px] font-mono text-slate-900 dark:text-deck-bright font-semibold shadow-xs">Ctrl + `</kbd>
+                </div>
+
+                <div class="flex items-center justify-between px-3.5 py-2.5">
                   <span class="text-slate-800 dark:text-deck-text font-medium">Open Git Branches & Stashes Modal</span>
                   <kbd class="px-2 py-0.5 bg-white dark:bg-deck-card border border-deck-border rounded text-[11px] font-mono text-slate-900 dark:text-deck-bright font-semibold shadow-xs">Ctrl + Shift + B</kbd>
                 </div>

@@ -120,6 +120,13 @@
     }
   }
 
+  function handleFocusActiveTerminal() {
+    const targetId = appState.focusedSessionId;
+    if (targetId) {
+      focusTerminal(targetId);
+    }
+  }
+
   function handleQuickCmd(cmd: string, agentKind?: AgentKind) {
     const targetSessionId = appState.focusedSessionId;
     if (targetSessionId) {
@@ -535,6 +542,29 @@
           updateScrollStatus(sessionId);
           return false;
         }
+
+        // Pass through global application hotkeys so xterm does not swallow them
+        const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+        const isBackquote = e.code === 'Backquote' || e.key === '`' || e.key === '~';
+        if (
+          // Project navigation: Ctrl+Alt+Left/Right, Ctrl+1..9
+          (isCtrlOrMeta && e.altKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) ||
+          (isCtrlOrMeta && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '9') ||
+          // Terminal navigation: Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+PageDown/PageUp
+          (isCtrlOrMeta && !e.altKey && (e.key === 'Tab' || e.key === 'PageDown' || e.key === 'PageUp')) ||
+          // Jump terminal: Alt+1..9
+          (e.altKey && !isCtrlOrMeta && !e.shiftKey && e.key >= '1' && e.key <= '9') ||
+          // New/Close terminal: Ctrl+Shift+`, Ctrl+Shift+W
+          (isCtrlOrMeta && e.shiftKey && (isBackquote || e.key === 'W' || e.key === 'w')) ||
+          // Focus/Toggle terminal / Modals / Toggles: Ctrl+`, Ctrl+,, Ctrl+Shift+B, Ctrl+Shift+S, Ctrl+Shift+T, Ctrl+Shift+D
+          (isCtrlOrMeta && !e.shiftKey && !e.altKey && isBackquote) ||
+          (isCtrlOrMeta && e.key === ',') ||
+          (isCtrlOrMeta && e.shiftKey && ['b', 'B', 's', 'S', 't', 'T', 'd', 'D'].includes(e.key)) ||
+          // Split layouts & Layout controls: Alt+H, Alt+V, Alt+S, Alt+X, Alt+[, Alt+], Alt+M, Alt+A, Alt+Z
+          (e.altKey && !isCtrlOrMeta && ['h', 'H', 'v', 'V', 's', 'S', 'x', 'X', '[', ']', 'm', 'M', 'a', 'A', 'z', 'Z'].includes(e.key))
+        ) {
+          return false;
+        }
       }
       return true;
     });
@@ -823,11 +853,14 @@
         }
       }
     );
+
+    window.addEventListener('focus-active-terminal', handleFocusActiveTerminal);
   });
 
   onDestroy(() => {
     if (unlistenOutput) unlistenOutput();
     if (unlistenExit) unlistenExit();
+    window.removeEventListener('focus-active-terminal', handleFocusActiveTerminal);
   });
 </script>
 
@@ -839,7 +872,7 @@
   <div class="h-10 bg-slate-50/60 dark:bg-deck-surface border-b border-deck-border/40 flex items-center justify-between px-3 py-1 shrink-0 select-none gap-2 relative z-20 shadow-xs">
     <!-- Scrolling Tabs Container (Shows active project's session tabs) -->
     <div class="flex-1 min-w-0 overflow-x-auto flex items-center space-x-1 py-0.5 pr-2 no-scrollbar">
-      {#each appState.sessions as session (session.id)}
+      {#each appState.sessions as session, idx (session.id)}
         {@const isPrimary = session.id === appState.activeSessionId}
         {@const isSecondary = appState.terminalLayout !== 'single' && session.id === appState.secondarySessionId}
         {@const isFocused = (isPrimary && appState.focusedPane === 'primary') || (isSecondary && appState.focusedPane === 'secondary') || (appState.terminalLayout === 'single' && isPrimary)}
@@ -868,6 +901,13 @@
             {:else if isSecondary}
               <span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700/60" title="Visible in Pane 2 (Secondary)">P2</span>
             {/if}
+          {/if}
+
+          <!-- Tab Index Hotkey Badge (Alt+1..9) -->
+          {#if idx < 9}
+            <span class="text-[9px] font-mono text-slate-400 dark:text-deck-muted/70 px-1 py-0.2 rounded bg-slate-200/50 dark:bg-deck-card" title="Switch tab (Alt+{idx + 1})">
+              {idx + 1}
+            </span>
           {/if}
 
           <!-- Agent or Shell Icon Badge -->
@@ -924,7 +964,7 @@
                   e.stopPropagation();
                   appState.closeSession(session.id);
                 }}
-                title="Close terminal"
+                title="Close terminal (Ctrl+Shift+W)"
               >
                 <X class="w-3 h-3" />
               </button>
@@ -937,7 +977,7 @@
       <button
         onclick={() => appState.addTerminalSession()}
         class="shrink-0 p-1 px-2 rounded bg-gray-100 dark:bg-deck-card/70 hover:bg-gray-200 dark:hover:bg-deck-border/80 border border-deck-border/50 text-slate-700 hover:text-slate-900 dark:text-deck-text dark:hover:text-deck-bright transition flex items-center space-x-1 text-xs cursor-pointer shadow-xs"
-        title="Open new terminal in active pane"
+        title="Open new terminal in active pane (Ctrl+Shift+`)"
       >
         <Plus class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
         <span class="text-xs font-mono font-medium">New Tab</span>

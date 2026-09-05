@@ -82,7 +82,7 @@
         <div class="flex items-center space-x-1 shrink-0">
           <FolderGit2 class="w-3.5 h-3.5 {isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-deck-muted'}" />
           {#if idx < 9}
-            <span class="text-[9px] font-mono text-slate-400 dark:text-deck-muted/70 px-1 py-0.2 rounded bg-slate-300/40 dark:bg-deck-card">
+            <span class="text-[9px] font-mono text-slate-400 dark:text-deck-muted/70 px-1 py-0.2 rounded bg-slate-300/40 dark:bg-deck-card" title="Switch to project (Ctrl+{idx + 1})">
               {idx + 1}
             </span>
           {/if}

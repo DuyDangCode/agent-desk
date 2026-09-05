@@ -137,6 +137,21 @@ struct PushPullReq {
     set_upstream: Option<bool>,
 }
 
+#[derive(Debug, Deserialize)]
+struct CreateDirReq {
+    #[serde(alias = "parentPath")]
+    parent_path: String,
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReadFileReq {
+    #[serde(alias = "repoPath")]
+    path: String,
+    #[serde(alias = "relativePath")]
+    relative_path: String,
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
@@ -152,6 +167,9 @@ async fn main() {
     let app = Router::new()
         .route("/api/default-dir", get(get_default_dir))
         .route("/api/fs/list-dirs", post(list_dirs_handler))
+        .route("/api/fs/create-dir", post(create_dir_handler))
+        .route("/api/fs/read-file", post(read_file_handler))
+        .route("/api/repo/init", post(init_repo_handler))
         .route("/api/repo/open", post(open_repo_handler))
         .route("/api/repo/diffs", post(get_diffs_handler))
         .route("/api/repo/stage-file", post(stage_file_handler))
@@ -281,6 +299,47 @@ async fn list_dirs_handler(
         home_path,
         directories,
     }))
+}
+
+async fn create_dir_handler(
+    Json(req): Json<CreateDirReq>,
+) -> Result<Json<String>, (axum::http::StatusCode, String)> {
+    let name = req.name.trim();
+    if name.is_empty() {
+        return Err((axum::http::StatusCode::BAD_REQUEST, "Directory name cannot be empty".to_string()));
+    }
+    if name.contains('/') || name.contains('\\') || name.contains('\0') || name == "." || name == ".." {
+        return Err((axum::http::StatusCode::BAD_REQUEST, "Invalid directory name".to_string()));
+    }
+    let target = PathBuf::from(&req.parent_path).join(name);
+    if target.exists() {
+        return Err((axum::http::StatusCode::BAD_REQUEST, format!("Directory '{}' already exists", name)));
+    }
+    fs::create_dir_all(&target)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create directory: {}", e)))?;
+    Ok(Json(target.to_string_lossy().to_string()))
+}
+
+async fn read_file_handler(
+    Json(req): Json<ReadFileReq>,
+) -> Result<Json<String>, (axum::http::StatusCode, String)> {
+    let rel = std::path::Path::new(&req.relative_path);
+    if rel.is_absolute() || req.relative_path.contains("..") || req.relative_path.contains('\0') {
+        return Err((axum::http::StatusCode::BAD_REQUEST, "Invalid relative file path".to_string()));
+    }
+    let full_path = PathBuf::from(&req.path).join(rel);
+    match fs::read_to_string(&full_path) {
+        Ok(content) => Ok(Json(content)),
+        Err(e) => Err((axum::http::StatusCode::NOT_FOUND, format!("Failed to read file: {}", e))),
+    }
+}
+
+async fn init_repo_handler(
+    Json(req): Json<RepoReq>,
+) -> Result<Json<RepoInfo>, (axum::http::StatusCode, String)> {
+    GitEngine::init_repo(&req.path)
+        .map(Json)
+        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))
 }
 
 async fn open_repo_handler(
