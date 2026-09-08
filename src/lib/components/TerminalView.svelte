@@ -869,7 +869,7 @@
   <div bind:this={hiddenPoolElement} class="hidden pointer-events-none" aria-hidden="true"></div>
 
   <!-- Session Tabs Bar, Split Modes, & Quick Actions Header -->
-  <div class="h-10 bg-slate-50/60 dark:bg-deck-surface border-b border-deck-border/40 flex items-center justify-between px-3 py-1 shrink-0 select-none gap-2 relative z-20 shadow-xs">
+  <div class="h-9 bg-slate-50 dark:bg-deck-surface border-b border-deck-border/60 flex items-center justify-between px-2.5 py-0.5 shrink-0 select-none gap-2 relative z-20">
     <!-- Scrolling Tabs Container (Shows active project's session tabs) -->
     <div class="flex-1 min-w-0 overflow-x-auto flex items-center space-x-1 py-0.5 pr-2 no-scrollbar">
       {#each appState.sessions as session, idx (session.id)}
@@ -878,7 +878,7 @@
         {@const isFocused = (isPrimary && appState.focusedPane === 'primary') || (isSecondary && appState.focusedPane === 'secondary') || (appState.terminalLayout === 'single' && isPrimary)}
         {@const isEditing = editingSessionId === session.id}
         <div
-          class="shrink-0 group relative flex items-center space-x-1.5 px-3 py-1.5 text-xs rounded-t font-mono transition cursor-pointer {isFocused ? 'bg-white dark:bg-deck-bg text-slate-900 dark:text-deck-bright border-t-2 ' + (appState.focusedPane === 'secondary' && isSecondary ? 'border-purple-500 shadow-xs' : 'border-blue-500 shadow-xs') + ' font-semibold' : isPrimary ? 'bg-slate-100/70 dark:bg-deck-card/50 text-slate-800 dark:text-deck-text border-t-2 border-blue-400/40' : isSecondary ? 'bg-slate-100/70 dark:bg-deck-card/50 text-purple-700 dark:text-purple-300 border-t-2 border-purple-400/40' : 'text-slate-500 hover:text-slate-900 hover:bg-gray-100/80 dark:text-deck-muted dark:hover:text-deck-bright dark:hover:bg-deck-card/40'}"
+          class="shrink-0 group relative flex items-center space-x-1.5 px-2.5 py-1 text-xs rounded-md font-mono transition cursor-pointer {isFocused ? 'bg-white dark:bg-deck-bg text-slate-900 dark:text-deck-bright shadow-xs font-semibold ring-1 ring-blue-500/40' : isPrimary ? 'bg-slate-100/80 dark:bg-deck-card/60 text-slate-800 dark:text-deck-text' : isSecondary ? 'bg-purple-50/80 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 dark:text-deck-muted dark:hover:text-deck-bright dark:hover:bg-deck-card/40'}"
           onclick={() => {
             appState.setActiveSession(session.id);
             focusTerminal(session.id);
@@ -1059,7 +1059,7 @@
           onclick={() => focusTerminal(appState.activeSessionId, 'primary')}
           onkeydown={(e) => { if (e.key === 'Enter') focusTerminal(appState.activeSessionId, 'primary'); }}
           tabindex="0"
-          role="region"
+          role="button"
           aria-label="Terminal Canvas"
         ></div>
       </div>
@@ -1154,7 +1154,7 @@
           onclick={() => focusTerminal(appState.activeSessionId, 'primary')}
           onkeydown={(e) => { if (e.key === 'Enter') focusTerminal(appState.activeSessionId, 'primary'); }}
           tabindex="0"
-          role="region"
+          role="button"
           aria-label="Pane 1 Terminal Canvas"
         ></div>
       </div>
@@ -1165,7 +1165,7 @@
         onmousedown={handleSplitMouseDown}
         role="separator"
         aria-label="Resize split terminals"
-        tabindex="0"
+        tabindex="-1"
       >
         <div class="{appState.terminalLayout === 'split-horizontal' ? 'w-0.5 h-6' : 'h-0.5 w-6'} bg-deck-muted/40 group-hover:bg-white rounded-full"></div>
       </div>
@@ -1263,7 +1263,7 @@
             onclick={() => focusTerminal(appState.secondarySessionId!, 'secondary')}
             onkeydown={(e) => { if (e.key === 'Enter') focusTerminal(appState.secondarySessionId!, 'secondary'); }}
             tabindex="0"
-            role="region"
+            role="button"
             aria-label="Pane 2 Terminal Canvas"
           ></div>
         {:else}

@@ -31,6 +31,7 @@ flowchart TB
             TermView["Terminal Cockpit (xterm.js + WebGL)"]
             FileTree["Modified Files Tree (FileList.svelte)"]
             DiffCanvas["Real-Time Diff Viewer (DiffView.svelte)"]
+            MarkdownCanvas["Markdown Preview (MarkdownPreview.svelte)"]
         end
         
         subgraph Modals["Steering & Gate Modals"]
@@ -136,6 +137,8 @@ The PTY Supervisor manages the lifecycle, stream multiplexing, and terminal rend
   * **Targeted Session Injection & Steering:** `targetPane` routing (`'primary' | 'secondary' | 'auto'`) ensures prompt injection, Quick Launch, and agent spawns target the focused active pane without hijacking sibling panes.
   * **Cohesive Theme Engine & Viewport Harmony:** Synchronizes `--deck-border`, `--deck-card`, and `--deck-surface` palettes across Dracula, Nord, OneDark, GitHub Dark, and Light themes, with borderless canvas mounting, transparent viewport scrollbar tracks, and internal `8px 12px` text padding.
   * **Terminal Scroll Fidelity & TUI Compatibility:** Smart bottom pinning via `term.write` completion callbacks, direct container `wheel` listeners, and floating "Scroll to Bottom" buttons for seamless navigation in curses/Ink CLI agents (Antigravity CLI).
+  * **Comprehensive Navigation Hotkeys:** Project cycling (`Ctrl+Shift+[` / `Ctrl+Shift+]`), terminal session creation/close/focus (`Ctrl+Shift+T`, `Ctrl+Shift+W`, `Ctrl+Shift+P`), and session cycling (`Ctrl+Shift+Left/Right`).
+  * **Agent Exit Detection & Lifecycle Clean-Up:** Automatically resets tab session status badges (🤖 to 💻) and restores shell titles when agent subprocesses exit.
   * **Scoped Project Working Directory:** PTYs inherit their specific attached project directory (`cwd = project.path`).
 * **Version 3.0 (Enterprise Platform) — Remote SSH & Containerized PTY:**
   * **SSH2 PTY Bridge:** Integrated `russh` / `ssh2` client allowing remote agent execution on cloud instances (EC2, GCP, remote workstations) over encrypted tunnels.
@@ -178,9 +181,12 @@ sequenceDiagram
   * Computes line-by-line diffs using `git2::Patch::from_buffers` for newly created or untracked files.
   * Hunk-level staging (`stage_hunk`) and uncommitted rollback (`discard_hunk`, `discard_file`).
   * Direct commit release gate executing `repo.commit(...)` with signature verification.
-* **Version 2.0 (Precision Review) — Intra-Line Token & Character Diffing:**
+* **Version 2.0 (Precision Review & Media Canvas) — Intra-Line Diffing, Markdown Engine & Safe Operations:**
   * Integrates the `similar` crate to compute sub-line token changes within modified lines.
-  * Visual token highlight layers with high-contrast rendering in `DiffView.svelte`.
+  * **Rich Markdown Render Preview:** Integrated GFM compiler and renderer (`MarkdownPreview.svelte`, `markdown.ts`) for `.md`, `.markdown`, and `.mdx` files with syntax-highlighted code blocks, interactive task checklists, tables, XSS sanitization, and side-by-side/unified diff line annotations.
+  * **File Explorer Workspace Operations:** Direct folder creation (`create_directory`) and 1-click Git initialization (`init_repository`) with path sanitization and directory traversal guards.
+  * **Persistent Network Push/Pull Feedback:** Indefinite loading toast notification (`toastType: 'loading'`) with animated spinning indicator during active Git push/pull, transitioning to completion or error summaries.
+  * **Remote Branch Protection:** Guard against direct remote branch checkout, guiding users to create local branches.
   * Multi-repository diff routing for parallel attached projects.
   * Multi-extension filter chips with flex-wrapping and file search filter.
 * **Version 3.0 (Time-Travel Diffs) — Binary Delta Streaming & Timeline Scrubbing:**

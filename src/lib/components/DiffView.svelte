@@ -299,7 +299,7 @@
 <div class="h-full flex flex-col bg-white dark:bg-deck-bg overflow-hidden relative select-text">
   {#if file}
     <!-- File Header Bar -->
-    <div class="h-12 bg-white dark:bg-deck-surface border-b border-deck-border flex items-center justify-between px-4 shrink-0 select-none">
+    <div class="h-9 bg-slate-50 dark:bg-deck-surface border-b border-deck-border flex items-center justify-between px-3 shrink-0 select-none">
       <!-- File Path & Status -->
       <div class="flex items-center space-x-2.5 overflow-hidden">
         <FileCode class="w-4 h-4 text-blue-500 dark:text-blue-400 shrink-0" />
@@ -578,8 +578,8 @@
             <!-- 2. SIDE-BY-SIDE (SPLIT) DIFF VIEW -->
             {:else}
               {@const splitRows = getSplitRows(hunk)}
-              <div class="overflow-x-auto select-none">
-                <table class="w-full border-collapse {appState.wrapLines ? 'table-fixed' : 'table-fixed min-w-[700px]'}">
+              <div class="overflow-x-auto select-none overscroll-x-contain">
+                <table class="w-full border-collapse table-fixed min-w-[640px] sm:min-w-[700px]">
                   <colgroup>
                     <col class="w-1/2" />
                     <col class="w-1/2" />
@@ -699,11 +699,11 @@
       filePath={file.path}
     />
   {:else if isMarkdown && markdownViewMode === 'side-by-side'}
-    <div class="flex-1 flex min-h-0 overflow-hidden">
-      <div class="w-1/2 flex flex-col min-w-0 border-r border-deck-border overflow-hidden">
+    <div class="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
+      <div class="w-full md:w-1/2 h-1/2 md:h-full flex flex-col min-w-0 border-b md:border-b-0 md:border-r border-deck-border overflow-hidden">
         {@render diffCanvas()}
       </div>
-      <div class="w-1/2 flex flex-col min-w-0 overflow-hidden">
+      <div class="w-full md:w-1/2 h-1/2 md:h-full flex flex-col min-w-0 overflow-hidden">
         <MarkdownPreview
           content={markdownFileContent}
           hunks={file.hunks}

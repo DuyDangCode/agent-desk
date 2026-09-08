@@ -38,19 +38,22 @@ The primary objectives of V2 are:
 * **[V2-REQ-PROJ-03] Parallel Workspace Isolation:** Switching projects instantly toggles active context (diff tree, file diffs, Git branch, and scoped PTY sessions running in the project's root `cwd`) while background agents and watchers continue running.
 * **[V2-REQ-PROJ-04] 1-Click Project Addition:** A dedicated `+` button on the horizontal bar to quickly attach new folders via the desktop Folder Picker.
 * **[V2-REQ-PROJ-05] Workspace Persistence:** Attached projects list and active project index are stored in local storage and reloaded upon app launch.
-* **[V2-REQ-PROJ-06] Keyboard Shortcuts for Project Navigation:** Hotkeys (`Ctrl+Alt+Left/Right` or `Ctrl+1..9`) for rapid cycling through attached projects.
+* **[V2-REQ-PROJ-06] Keyboard Shortcuts for Project Navigation:** Hotkeys (`Ctrl+Shift+[` / `Ctrl+Shift+]`, `Ctrl+Alt+Left/Right`, or `Ctrl+1..9`) for rapid cycling through attached projects.
 
 ### 3.2 Module 2: Multi-Session Terminal Deck (`MULTI-TERM`)
 * **[V2-REQ-TERM-01] Multi-Tab Session Registry:** Users can open, close, rename, and rearrange unlimited terminal tabs with dedicated PTY instances.
 * **[V2-REQ-TERM-02] Split-Terminal Layouts:** Support side-by-side or stacked terminal panes within the terminal cockpit (e.g., Agent 1 in Pane A, Test runner in Pane B).
 * **[V2-REQ-TERM-03] Agent Status Indicators:** Visual activity badges on tabs (Active/Typing, Idle, Process Exited, Alert).
 * **[V2-REQ-TERM-04] Target Session Selector for Steering:** When triggering "Steer Agent", user can choose which active terminal session receives the injected prompt.
+* **[V2-REQ-TERM-05] Terminal Navigation Hotkeys:** Dedicated keyboard shortcuts for session management (`Ctrl+Shift+T` new session, `Ctrl+Shift+W` close focused session, `Ctrl+Shift+P` focus active terminal, `Ctrl+Shift+Left/Right` cycle sessions).
+* **[V2-REQ-TERM-06] Clean Agent Process Exit Reset:** Automatically reset session status badges (🤖 to 💻) and restore shell titles upon agent termination.
 
 ### 3.3 Module 3: Advanced Review & Diff Canvas (`ADV-DIFF`)
 * **[V2-REQ-DIFF-01] Word/Character-Level Intra-Line Diffs:** Highlight exact tokens changed within modified lines for quick micro-reviews.
 * **[V2-REQ-DIFF-02] Advanced File Filters & Search:** Filter modified files by file extension, status (Staged, Unstaged, Untracked), or file name search.
 * **[V2-REQ-DIFF-03] Code Folding & Context Expansion:** Collapse unchanged blocks while allowing 1-click context expansion (+5 / +10 lines).
 * **[V2-REQ-DIFF-04] Syntax Theme Customization:** Support standard themes (One Dark, GitHub Dark/Light, Dracula, Nord) for terminal and diff viewer.
+* **[V2-REQ-DIFF-05] Rich Markdown Render Preview:** Render formatted HTML preview with GFM features (tables, checklists, syntax code blocks, headings) and sanitization for `.md`, `.markdown`, and `.mdx` files, with side-by-side and unified diff coloring.
 
 ### 3.4 Module 4: Prompt Template Engine & Quick Steer (`TEMPLATES`)
 * **[V2-REQ-STR-01] Customizable Prompt Templates:** User can create and store custom steering templates with variables (e.g., `{{file}}`, `{{lines}}`, `{{code}}`, `{{instructions}}`).
@@ -65,6 +68,8 @@ The primary objectives of V2 are:
 * **[V2-REQ-GIT-01] AI-Assisted Commit Message Generation:** 1-click button to summarize all staged hunks into conventional commit format (`feat:`, `fix:`, `refactor:`).
 * **[V2-REQ-GIT-02] Quick Branch & Stash Operations:** Create/switch branches and stash uncommitted changes directly from the top status bar.
 * **[V2-REQ-GIT-03] Interactive Rebase & Commit Amend:** Amend previous commits or discard uncommitted changes in bulk.
+* **[V2-REQ-GIT-04] Real-Time Push/Pull Loading Notifications:** Non-dismissing toast notifications with animated spinner during network operations, transitioning cleanly to completion or error status.
+* **[V2-REQ-GIT-05] In-Explorer Directory Creation & Git Initialization:** Directory creation (`New Folder`) with traversal safeguards, and 1-click Git initialization (`Init Git`) for plain directories.
 
 ---
 
@@ -95,7 +100,7 @@ The primary objectives of V2 are:
   - Tab bar with Add Tab (`+`), Close Tab (`x`), Rename, and Drag-to-reorder.
   - Support single, horizontal split, and vertical split panes for simultaneous monitoring.
 - [x] **Task 2.3: Global Keyboard Shortcuts & Navigation**
-  - Shortcuts for project cycling (`Ctrl+Alt+Left/Right`), tab switching (`Ctrl+Tab`, `Cmd+1..9`), quick-steer (`Ctrl+Shift+S`), and terminal scrolling (`Shift+End`, `Shift+PageDown`).
+  - Shortcuts for project cycling (`Ctrl+Shift+[` / `Ctrl+Shift+]`, `Ctrl+Alt+Left/Right`), terminal operations (`Ctrl+Shift+T`, `Ctrl+Shift+W`, `Ctrl+Shift+P`, `Ctrl+Shift+Left/Right`), tab switching (`Ctrl+Tab`, `Cmd+1..9`), quick-steer (`Ctrl+Shift+S`), and terminal scrolling (`Shift+End`, `Shift+PageDown`).
 
 ---
 
@@ -106,6 +111,9 @@ The primary objectives of V2 are:
   - Implement collapsible unchanged code regions with expand buttons (`▲ Show more lines ▼`).
 - [x] **Task 3.3: Diff Filters & Search Bar**
   - Add search input and flex-wrapping filter chips (Staged, Unstaged, Extension) above the file list.
+- [x] **Task 3.4: Rich Markdown Render Preview & Diff Engine**
+  - Build `MarkdownPreview.svelte` and `src/lib/utils/markdown.ts` with GFM parsing, task checklists, code blocks, tables, and XSS sanitization.
+  - Add raw diff vs. markdown preview toggle in `DiffView.svelte`.
 
 ---
 
@@ -126,15 +134,19 @@ The primary objectives of V2 are:
   - Add "Generate Commit Message" button in `CommitPanel.svelte` that analyzes staged diffs.
 - [x] **Task 5.3: Branch Switcher & Stash UI**
   - Add `BranchModal.svelte` modal dialog for branch switching, branch creation, and stash save/pop operations.
+- [x] **Task 5.4: Push/Pull Loading Notifications & File Explorer Operations**
+  - Add real-time loading toast with `Loader2` animated spinner for `git push` and `git pull`.
+  - Add directory creation (`create_directory`) and 1-click Git initialization (`init_repository`) in `FolderPickerModal.svelte`.
 
 ---
 
 ## 5. Definition of Done (DoD) for Version 2.0
 
-1. **[x] Multi-Project Navigation:** Users can attach 3+ project repositories and switch between them instantly via the horizontal bar with zero lag and full state isolation.
+1. **[x] Multi-Project Navigation:** Users can attach 3+ project repositories and switch between them instantly via the horizontal bar or hotkeys (`Ctrl+Shift+[` / `]`) with zero lag and full state isolation.
 2. **[x] Multi-Agent Stability & Persistence:** Concurrent terminal sessions and running agents (`agy`, `opencode`, `claude`, `aider`, `goose`) run across attached projects with zero cross-talk, memory leaks, or UI lag, and persist across project navigation.
-3. **[x] Precision Diffing:** Intra-line word changes are clearly visible and accurately highlighted.
+3. **[x] Precision Diffing & Markdown Preview:** Intra-line word changes are clearly visible and accurately highlighted, with 1-click GFM Markdown preview for `.md` files.
 4. **[x] Template Steering:** Users can trigger preset and custom templates to steer any selected terminal session in under 2 clicks.
-5. **[x] Smart Commit:** Automated commit messages accurately reflect staged changes per project.
-6. **[x] Terminal Scroll Fidelity:** Full-screen Ink/curses TUI applications (Antigravity CLI) auto-scroll to the active prompt and allow seamless end-of-page navigation.
-7. **[x] Memory Control:** Memory footprint remains `< 90MB` with 3 active projects, active PTY sessions, and full diff canvas loaded.
+5. **[x] Smart Commit & Git Operations:** Automated commit messages reflect staged changes, with animated loading notifications for push/pull operations and safe branch checkout.
+6. **[x] File Explorer Operations:** Users can create directories and initialize Git repositories directly inside the desktop browser.
+7. **[x] Terminal Scroll Fidelity:** Full-screen Ink/curses TUI applications (Antigravity CLI) auto-scroll to the active prompt and allow seamless end-of-page navigation.
+8. **[x] Memory Control:** Memory footprint remains `< 90MB` with 3 active projects, active PTY sessions, and full diff canvas loaded.

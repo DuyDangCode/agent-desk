@@ -112,13 +112,16 @@ agent_deck/
 ### 4.2. Svelte 5 & Frontend Standards
 * **Runes Only:** Exclusively use Svelte 5 runes (`$state`, `$derived`, `$effect`). Avoid legacy Svelte 3/4 reactive declarations (`$:`) and legacy store subscriptions (`$store`).
 * **Clean Components:** Keep components modular and single-responsibility:
-  * `ProjectBar.svelte` -> horizontal project navigation bar, project pills, branch indicator, dirty badge, add/detach project.
-  * `TerminalView.svelte` -> xterm.js multi-session lifecycle, Unicode 11 addon, and PTY I/O.
+  * `Header.svelte` -> compact single top header bar, active project breadcrumb, branch selector, view switcher, and secondary actions popover.
+  * `Sidebar.svelte` -> collapsible project workspace navigation (expanded, rail, hidden, mobile drawer).
+  * `StatusBar.svelte` -> minimal bottom status bar with git sync, dirty count, and active agent indicator.
+  * `TerminalView.svelte` -> xterm.js multi-session lifecycle, Unicode 11 addon, session tabs, and PTY I/O.
   * `FileList.svelte` -> modified file list and filtering.
   * `DiffView.svelte` -> diff hunk visualization, multi-line drag selection, and line actions.
   * `SteerModal.svelte` -> prompt packet formatting, agent selection, and bracketed paste injection.
   * `CommitPanel.svelte` -> staging summary and commit release gate.
   * `FolderPickerModal.svelte` -> desktop-grade directory explorer with Places.
+* **UI Simplicity & Design Directives:** Adhere strictly to the UI design philosophy, 5-zone shell layout, responsive breakpoints, and 13-point review checklist defined in [`.agents/rules/ui-development.md`](file:///home/thanhduy/Projects/agent_deck/.agents/rules/ui-development.md) and [`.agents/skills/ui-development/SKILL.md`](file:///home/thanhduy/Projects/agent_deck/.agents/skills/ui-development/SKILL.md).
 * **IPC Abstraction:** All backend communications must go through [`src/lib/utils/tauri.ts`](file:///home/thanhduy/Projects/agent_deck/src/lib/utils/tauri.ts), ensuring dual compatibility with both Tauri IPC and the local HTTP/WS server.
 
 ---

@@ -59,9 +59,9 @@
   }
 </script>
 
-<div class="h-full flex flex-col bg-white dark:bg-deck-surface border-r border-deck-border select-none w-72 shrink-0">
+<div class="h-full flex flex-col bg-white dark:bg-deck-surface border-r border-deck-border select-none w-56 sm:w-64 md:w-72 shrink-0">
   <!-- Search & Filter Header -->
-  <div class="p-2.5 border-b border-deck-border space-y-2">
+  <div class="p-2 border-b border-deck-border space-y-1.5">
     <div class="relative">
       <Search class="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-deck-muted" />
       <input

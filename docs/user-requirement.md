@@ -80,7 +80,7 @@ AgentDeck serves as the desktop harness combining an embedded multi-session pseu
 | :--- | :---: | :---: | :--- |
 | **FR-PROJ-01** | **Must** | ✅ Implemented | The user must be able to attach multiple project folders/repositories simultaneously into a unified workspace. |
 | **FR-PROJ-02** | **Must** | ✅ Implemented | The application must render a dedicated top **Horizontal Project Bar** showing all attached projects with tab pills, project folder icons, active Git branch, dirty file count badge, and active agent indicators. |
-| **FR-PROJ-03** | **Must** | ✅ Implemented | The user must be able to click any project tab or use keyboard shortcuts (`Ctrl+Alt+Left/Right` or `Ctrl+1..9`) to switch active project context instantly. |
+| **FR-PROJ-03** | **Must** | ✅ Implemented | The user must be able to click any project tab or use keyboard shortcuts (`Ctrl+Shift+[` / `Ctrl+Shift+]`, `Ctrl+Alt+Left/Right`, or `Ctrl+1..9`) to switch active project context instantly. |
 | **FR-PROJ-04** | **Must** | ✅ Implemented | The system must provide isolated workspace state per attached project (separate Git status, file diff list, selected diff, view mode, and project-scoped PTY terminal sessions running in that project's working directory). |
 | **FR-PROJ-05** | **Must** | ✅ Implemented | The user must be able to attach new projects with 1-click via the `+` button on the horizontal bar or the Folder Picker dialog. |
 | **FR-PROJ-06** | **Should** | ✅ Implemented | The user must be able to close/detach projects from the horizontal bar (`x` button) with safe confirmation when active agents or unsaved diffs exist. |
@@ -95,6 +95,8 @@ AgentDeck serves as the desktop harness combining an embedded multi-session pseu
 | **FR-WS-02** | **Must** | ✅ Implemented | The application must initialize a zero-cost in-memory Git indexer and native filesystem watcher upon workspace load. |
 | **FR-WS-03** | **Should** | ✅ Implemented | The user must be able to navigate directories and switch workspaces via a visual File Explorer with Places and breadcrumbs. |
 | **FR-WS-04** | **Should** | ✅ Implemented | The application must display repository metadata (active branch, dirty working tree status, commit hash). |
+| **FR-WS-05** | **Should** | ✅ Implemented | The user must be able to create new subdirectories directly within the File Explorer with name validation and directory traversal prevention. |
+| **FR-WS-06** | **Should** | ✅ Implemented | The user must be able to initialize a new Git repository on any plain folder directly from the File Explorer with optional auto-attachment to the workspace deck. |
 
 ### 4.3 Terminal Cockpit & Embedded PTY (`TERM`)
 
@@ -108,6 +110,8 @@ AgentDeck serves as the desktop harness combining an embedded multi-session pseu
 | **FR-TERM-06** | **Should** | ✅ Implemented | The terminal must automatically resize and adapt PTY dimensions on window split or layout adjustments. |
 | **FR-TERM-07** | **Must** | ✅ Implemented | The terminal cockpit must support dynamic split layouts (Single `Alt+S`, Side-by-Side Horizontal `Alt+H`, and Stacked Vertical `Alt+V`) with draggable resizer divider and dedicated pane toolbars. |
 | **FR-TERM-08** | **Should** | ✅ Implemented | The system must track active focused panes (`focusedPane: 'primary' | 'secondary'`), display tab badges (`P1`, `P2`), and route prompt steering, quick actions, and scroll-to-bottom to the active pane. |
+| **FR-TERM-09** | **Should** | ✅ Implemented | The user must be able to navigate terminal sessions via dedicated hotkeys: `Ctrl+Shift+T` (new terminal session), `Ctrl+Shift+W` (close focused terminal session with single-session safety), `Ctrl+Shift+P` (focus active terminal), and `Ctrl+Shift+Left/Right` (cycle terminal sessions). |
+| **FR-TERM-10** | **Should** | ✅ Implemented | The system must automatically reset terminal session status indicators (🤖 to 💻) and restore shell titles when an AI agent process terminates or exits. |
 
 ### 4.4 Real-Time Differential & Review Canvas (`DIFF`)
 
@@ -119,6 +123,7 @@ AgentDeck serves as the desktop harness combining an embedded multi-session pseu
 | **FR-DIFF-04** | **Must** | ✅ Implemented | Diffs must synthesize in-memory Myers diffs for untracked and unstaged files. |
 | **FR-DIFF-05** | **Should** | ✅ Implemented | The user must be able to filter the diff tree (all, staged vs. unstaged, search query). |
 | **FR-DIFF-06** | **Must** | ✅ Implemented | The system provides word-level / character-level intra-line diff highlighting via `similar` crate in Rust. |
+| **FR-DIFF-07** | **Must** | ✅ Implemented | The review canvas must support rich Markdown rendering for all markdown files (`.md`, `.markdown`, `.mdx`), allowing users to toggle between raw diff/code and formatted HTML preview with GFM features (tables, checklists, syntax code blocks, headings) and sanitization. |
 
 ### 4.5 Human Steering & Bi-Directional Context Injection (`STEER`)
 
@@ -139,6 +144,8 @@ AgentDeck serves as the desktop harness combining an embedded multi-session pseu
 | **FR-GIT-03** | **Must** | ✅ Implemented | The user must be able to enter a commit message and trigger a Git commit natively via `libgit2`. |
 | **FR-GIT-04** | **Should** | ✅ Implemented | The application must provide a 1-click "Stage All" and "Unstage All" workflow. |
 | **FR-GIT-05** | **Should** | ✅ Implemented | The system provides AI-assisted commit message generation based on staged hunks. |
+| **FR-GIT-06** | **Should** | ✅ Implemented | The application must display a real-time persistent loading toast notification with an animated spinner during Git push and pull operations, transitioning to success or error summaries upon completion. |
+| **FR-GIT-07** | **Must** | ✅ Implemented | The system must prevent direct checkout of remote Git branches across the UI and Git engine, guiding the user to create a local tracking branch instead. |
 
 ---
 

@@ -136,24 +136,24 @@ export function renderMarkdownToHtml(markdown: string): string {
 
   const flushTable = () => {
     if (inTable) {
-      let tableHtml = '<div class="overflow-x-auto my-4 border border-deck-border rounded-lg shadow-2xs"><table class="min-w-full divide-y divide-deck-border text-xs">';
+      let tableHtml = '<div class="overflow-x-auto max-w-full my-4 border border-deck-border rounded-lg shadow-2xs overscroll-x-contain"><table class="w-full min-w-full divide-y divide-deck-border text-xs table-auto">';
       // Header
       tableHtml += '<thead class="bg-gray-50 dark:bg-deck-card text-slate-700 dark:text-deck-bright font-semibold"><tr>';
       tableHeaders.forEach((th, i) => {
         const align = tableAlignments[i] || 'left';
         const alignClass = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : 'text-left';
-        tableHtml += `<th class="px-3.5 py-2 ${alignClass}">${parseInline(escapeHtml(th.trim()))}</th>`;
+        tableHtml += `<th class="px-2.5 sm:px-3.5 py-2 ${alignClass} font-semibold text-[11px] sm:text-xs tracking-wide select-text">${parseInline(escapeHtml(th.trim()))}</th>`;
       });
       tableHtml += '</tr></thead>';
 
       // Body
       tableHtml += '<tbody class="divide-y divide-deck-border/60 bg-white dark:bg-deck-surface text-slate-800 dark:text-deck-text">';
       tableRows.forEach((row) => {
-        tableHtml += '<tr class="hover:bg-gray-50/50 dark:hover:bg-deck-card/40 transition">';
+        tableHtml += '<tr class="hover:bg-gray-50/70 dark:hover:bg-deck-card/50 even:bg-gray-50/20 dark:even:bg-deck-card/10 transition-colors">';
         row.forEach((td, i) => {
           const align = tableAlignments[i] || 'left';
           const alignClass = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : 'text-left';
-          tableHtml += `<td class="px-3.5 py-2 ${alignClass}">${parseInline(escapeHtml(td.trim()))}</td>`;
+          tableHtml += `<td class="px-2.5 sm:px-3.5 py-1.5 sm:py-2 ${alignClass} text-[11px] sm:text-xs select-text">${parseInline(escapeHtml(td.trim()))}</td>`;
         });
         tableHtml += '</tr>';
       });

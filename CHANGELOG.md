@@ -16,7 +16,7 @@ Targeted enhancements and architectural milestones planned for [Version 2.0.0](d
 - **Added:** Parallel Workspace State Isolation (`ProjectItem`) retaining independent PTY instances with project root `cwd`, dedicated Myers diff trees, and selected file views per project.
 - **Added:** Multi-repository filesystem watcher supervisor in Rust (`src-tauri/src/watcher/` & `server/src/main.rs`) emitting debounced `repo-changed` events with repository path filtering.
 - **Added:** Project list and active tab persistence in `localStorage` / `tauri-plugin-store`.
-- **Added:** 1-click Folder Picker repository attachment and multi-project quick switcher (`Ctrl+1..9`).
+- **Added:** 1-click Folder Picker repository attachment, multi-project quick switcher (`Ctrl+1..9`), and fast project cycling hotkeys (`Ctrl+Shift+[` and `Ctrl+Shift+]`).
 
 ### 🚀 Terminal Cockpit, Split Deck & Multi-PTY Registry (Version 2.0)
 - **Added:** Multi-session PTY supervisor registry in Rust (`HashMap<SessionId, PtyProcess>`) with dedicated asynchronous Tokio stdout read channels and isolated event streaming (`pty-output`).
@@ -29,7 +29,8 @@ Targeted enhancements and architectural milestones planned for [Version 2.0.0](d
 - **Added:** Persistent Canvas Session Pool maintaining all terminal instances and background agents alive across project navigation without DOM teardown or PTY kill.
 - **Added:** Smart Bottom Pinning and direct wheel event listener in `TerminalView.svelte` for full-screen curses/Ink TUI CLI agents (Antigravity CLI, OpenCode, Claude Code).
 - **Added:** Floating "Scroll to Bottom" quick action button and keyboard shortcuts (`Shift+End`, `Shift+PageDown`, `Cmd+Down`, `Ctrl+Down`).
-- **Added:** Global keyboard shortcuts for fast project cycling (`Ctrl+Alt+Left/Right`, `Ctrl+1..9`), terminal tab switching (`Ctrl+Tab`), split layouts (`Alt+H`, `Alt+V`, `Alt+S`), pane swapping (`Alt+X`), and focused pane cycling (`Alt+[` / `Alt+]`).
+- **Added:** Comprehensive terminal and project keyboard navigation shortcuts: `Ctrl+Shift+T` (new terminal session), `Ctrl+Shift+W` (close focused session with single-session safety), `Ctrl+Shift+P` (focus active terminal), `Ctrl+Shift+Left/Right` (cycle terminal sessions), `Ctrl+Shift+[` / `Ctrl+Shift+]` (cycle projects), and `Ctrl+Alt+1..9` / `Ctrl+1..9` (direct project index jump).
+- **Added:** AI Agent exit state detection: Automatically resets session status badges (🤖 to 💻) and restores default shell titles when agent processes exit.
 
 ### 🎨 Theme Engine & Borderless Canvas Harmony (Version 2.0)
 - **Enhanced:** Re-engineered color palettes for **Dracula** (`#282a36`), **Nord Ice** (`#2e3440`), **One Dark Pro** (`#282c34`), **GitHub Dark** (`#0d1117`), and **Light** (`#ffffff`) in `theme.svelte.ts` so `--deck-border`, `--deck-card`, and `--deck-surface` perfectly harmonize with the terminal background.
@@ -38,7 +39,8 @@ Targeted enhancements and architectural milestones planned for [Version 2.0.0](d
 - **Enhanced:** Added comfortable `8px 12px` inner text padding to `.xterm`, `.xterm-screen`, and `.xterm-link-layer`, seamlessly integrated with `FitAddon` column/row computation and matching background colors.
 - **Enhanced:** Direct DOM background synchronization on `st.wrapper`, `st.term.element`, and `.xterm-viewport` during theme initialization and switching.
 
-### ⚡ Advanced Differential Review Engine (Version 2.0)
+### ⚡ Advanced Differential Review Engine & Markdown Preview (Version 2.0)
+- **Added:** Rich Markdown Render Preview (`MarkdownPreview.svelte` & `markdown.ts`) in the diff and review canvas. Allows 1-click toggling between raw code/diff and rendered HTML for all Markdown files (`.md`, `.markdown`, `.mdown`, `.mkdn`, `.mdx`). Features full GitHub Flavored Markdown (GFM) support: heading hierarchy (H1–H6), bold/italics, strikethrough, interactive task checklists (`- [x]`), syntax-highlighted code blocks with language tags, tables with column alignments, blockquotes, and security sanitization (XSS and `javascript:`/`data:` link neutralization), plus side-by-side or unified diff line coloring.
 - **Added:** Token and character-level intra-line diffing via the `similar` crate in Rust, providing fine-grained micro-review of agent code modifications.
 - **Added:** Code folding for unchanged lines with expandable context windows (`+5` / `+10` lines).
 - **Added:** Diff filtering and search toolbar with flex-wrapping filter chips (Staged, Unstaged, Extension) above the file list.
@@ -49,7 +51,9 @@ Targeted enhancements and architectural milestones planned for [Version 2.0.0](d
 - **Added:** One-click quick steer preset actions ("Explain function & removal impact", "Refactor & clean", "Add unit tests", "Fix bug & validation", "Optimize performance", "Security hardening") with automatic template switching.
 - **Added:** Interactive packet preview and markdown editor modal before terminal injection.
 
-### 🛡️ Smart Git & AI Release Gate (Version 2.0)
+### 🛡️ Smart Git, File Operations & AI Release Gate (Version 2.0)
+- **Added:** Real-time push and pull loading notification overlay in `App.svelte` featuring an animated spinning loader (`Loader2 animate-spin`) and persistent state (`toastType: 'loading'`, `duration: 0`) during active network `git push` and `git pull` operations, cleanly transitioning to success or error summaries.
+- **Added:** Directory creation ("New Folder") and 1-click Git initialization ("Init Git") directly in the desktop File Explorer (`FolderPickerModal.svelte`, `create_directory`, `init_repository`).
 - **Added:** Automated conventional commit message synthesis (`feat:`, `fix:`, `refactor:`) from staged hunks via local LLM / OpenAI-compatible API bridge in `CommitPanel.svelte`.
 - **Added:** Branch switcher, branch creation modal, and stash manager (`BranchModal.svelte`) integrated into the top status bar.
 - **Added:** "Hide remote branches" filter toggle (default enabled) in `BranchModal.svelte` to isolate local working branches.

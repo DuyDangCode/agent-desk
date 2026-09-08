@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { appState } from '$lib/stores/appState.svelte';
-  import ActivityBar from '$lib/components/ActivityBar.svelte';
   import Header from '$lib/components/Header.svelte';
-  import ProjectBar from '$lib/components/ProjectBar.svelte';
+  import Sidebar from '$lib/components/Sidebar.svelte';
+  import StatusBar from '$lib/components/StatusBar.svelte';
   import TerminalView from '$lib/components/TerminalView.svelte';
   import FileList from '$lib/components/FileList.svelte';
   import DiffView from '$lib/components/DiffView.svelte';
@@ -19,6 +19,7 @@
   // Resizable split pane width (percentage for left terminal pane)
   let splitPercent = $state(48);
   let isDragging = $state(false);
+  let workspaceElement = $state<HTMLElement | null>(null);
 
   function handleMouseDown(e: MouseEvent) {
     e.preventDefault();
@@ -28,11 +29,11 @@
   }
 
   function handleMouseMove(e: MouseEvent) {
-    if (!isDragging) return;
-    const sidebarWidth = 48; // width of vertical ActivityBar
-    const availableWidth = window.innerWidth - sidebarWidth;
-    const clientXInWorkspace = e.clientX - sidebarWidth;
-    const newPercent = (clientXInWorkspace / availableWidth) * 100;
+    if (!isDragging || !workspaceElement) return;
+    const rect = workspaceElement.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const clientXInWorkspace = e.clientX - rect.left;
+    const newPercent = (clientXInWorkspace / rect.width) * 100;
     // Constrain split between 20% and 80%
     splitPercent = Math.min(Math.max(newPercent, 20), 80);
   }
@@ -44,6 +45,17 @@
   }
 
   function handleGlobalKeydown(e: KeyboardEvent) {
+    // Toggle Sidebar: Ctrl+B / Cmd+B
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'b' || e.key === 'B')) {
+      e.preventDefault();
+      if (typeof window !== 'undefined' && window.innerWidth < 768) {
+        appState.toggleMobileSidebar();
+      } else {
+        appState.toggleSidebar();
+      }
+      return;
+    }
+
     // Project Tabs Cycling: Ctrl+Alt+Left / Right
     if ((e.ctrlKey || e.metaKey) && e.altKey && e.key === 'ArrowRight') {
       e.preventDefault();
@@ -74,7 +86,7 @@
         appState.selectSessionByIndex(idx);
       }
     }
-    // New Terminal Tab: Ctrl+Shift+` (using e.code === 'Backquote' for cross-browser/IME compatibility)
+    // New Terminal Tab: Ctrl+Shift+`
     else if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === '`' || e.key === '~' || e.code === 'Backquote')) {
       e.preventDefault();
       appState.addTerminalSession();
@@ -91,16 +103,16 @@
       if (!appState.showTerminal) {
         appState.toggleTerminal(true);
         setTimeout(() => appState.focusActiveTerminal(), 50);
-        appState.showToast('Terminal Cockpit Opened', 'info');
+        appState.showToast('Terminal Opened', 'info');
       } else {
         const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
         const isTerminalFocused = activeEl?.closest('.xterm') || activeEl?.classList.contains('xterm-helper-textarea');
         if (isTerminalFocused) {
           appState.toggleTerminal(false);
-          appState.showToast('Terminal Cockpit Hidden', 'info');
+          appState.showToast('Terminal Hidden', 'info');
         } else {
           appState.focusActiveTerminal();
-          appState.showToast('Terminal Cockpit Focused', 'info');
+          appState.showToast('Terminal Focused', 'info');
         }
       }
     }
@@ -167,28 +179,49 @@
     }
   }
 
+  function handleResize() {
+    if (typeof window === 'undefined') return;
+    if (window.innerWidth < 768) {
+      if (appState.sidebarMode !== 'hidden') {
+        appState.sidebarMode = 'hidden';
+      }
+    } else if (window.innerWidth < 1024) {
+      if (appState.sidebarMode === 'expanded') {
+        appState.sidebarMode = 'rail';
+      }
+    }
+  }
+
   onMount(() => {
     appState.initWorkspace();
+    window.addEventListener('resize', handleResize);
+    handleResize();
+  });
+
+  onDestroy(() => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', handleResize);
+    }
   });
 </script>
 
 <svelte:window onkeydown={handleGlobalKeydown} />
 
 <div class="h-screen w-screen flex flex-col bg-white dark:bg-deck-bg text-slate-800 dark:text-deck-text overflow-hidden font-sans select-none {isDragging ? 'cursor-col-resize select-none' : ''}">
-  <!-- Top Workspace Header -->
+  <!-- 1. Single Top Header -->
   <Header />
 
-  <!-- Horizontal Multi-Project Switcher Bar (Module 1: MULTI-PROJ) -->
-  <ProjectBar />
-
-  <!-- Main Cockpit Layout with Vertical ActivityBar Sidebar -->
+  <!-- Middle Area: Collapsible Sidebar + Workspace Canvas -->
   <div class="flex-1 flex overflow-hidden relative">
-    <!-- Leftmost Vertical Sidebar Dock -->
-    <ActivityBar />
+    <!-- 2. Optional Collapsible Sidebar for Projects & Navigation -->
+    <Sidebar />
 
-    <!-- Workspace Panes Canvas -->
-    <div class="flex-1 h-full flex overflow-hidden relative">
-      <!-- 1. Left Pane: Terminal Cockpit (preserved in DOM when hidden to keep PTY alive) -->
+    <!-- 3. Main Workspace Area -->
+    <main
+      bind:this={workspaceElement}
+      class="flex-1 h-full flex overflow-hidden relative min-w-0"
+    >
+      <!-- Terminal Cockpit Pane (preserved in DOM when hidden to keep PTY alive) -->
       <div
         class="h-full flex flex-col overflow-hidden {appState.showTerminal ? '' : 'hidden'}"
         style={appState.showTerminal && appState.showReview ? `width: ${splitPercent}%;` : 'width: 100%;'}
@@ -199,7 +232,7 @@
       <!-- Draggable Resizer Gutter (Only active when BOTH panels are shown) -->
       {#if appState.showTerminal && appState.showReview}
         <div
-          class="w-1.5 h-full bg-deck-border/70 hover:bg-blue-500 active:bg-blue-500 cursor-col-resize shrink-0 transition-colors z-10 flex items-center justify-center group"
+          class="w-1.5 h-full bg-deck-border/60 hover:bg-blue-500 active:bg-blue-500 cursor-col-resize shrink-0 transition-colors z-10 flex items-center justify-center group"
           onmousedown={handleMouseDown}
           role="separator"
           aria-label="Resize layout panes"
@@ -208,7 +241,7 @@
         </div>
       {/if}
 
-      <!-- 2. Right Pane: Real-Time Diff & Review Canvas (preserved in DOM when hidden) -->
+      <!-- Real-Time Diff & Review Canvas (preserved in DOM when hidden) -->
       <div
         class="h-full flex overflow-hidden {appState.showReview ? '' : 'hidden'}"
         style={appState.showTerminal && appState.showReview ? `width: ${100 - splitPercent}%;` : 'width: 100%;'}
@@ -222,10 +255,10 @@
         </div>
       </div>
 
-      <!-- 3. Blank / Empty Background State (when NO panel is open) -->
+      <!-- Blank / Empty Background State (when NO panel is open) -->
       {#if !appState.showTerminal && !appState.showReview}
         <div class="flex-1 h-full flex flex-col items-center justify-center bg-white dark:bg-deck-bg p-8 text-center select-none animate-in fade-in duration-150">
-          <div class="max-w-md p-8 rounded-2xl border border-deck-border bg-gray-50/60 dark:bg-deck-surface/60 shadow-xl space-y-4">
+          <div class="max-w-md p-8 rounded-2xl border border-deck-border bg-slate-50/60 dark:bg-deck-surface/60 shadow-xl space-y-4">
             <div class="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center mx-auto text-blue-600 dark:text-blue-400 shadow-inner">
               <Sparkles class="w-7 h-7" />
             </div>
@@ -233,41 +266,44 @@
             <div class="space-y-1.5">
               <h2 class="text-base font-semibold text-slate-900 dark:text-deck-bright">All Panels Hidden</h2>
               <p class="text-xs text-slate-500 dark:text-deck-muted leading-relaxed">
-                Terminal sessions and background AI coding agents remain active. Click the sidebar icons or buttons below to display panels.
+                Terminal sessions and AI coding agents remain active in the background. Use the top navigation or buttons below to display panels.
               </p>
             </div>
 
             <!-- Quick Action Buttons -->
             <div class="flex flex-wrap items-center justify-center gap-2 pt-2">
               <button
-                onclick={() => appState.toggleTerminal(true)}
-                class="px-3 py-1.5 bg-white dark:bg-deck-card hover:bg-gray-100 dark:hover:bg-deck-border text-slate-800 dark:text-deck-text text-xs rounded-lg border border-deck-border font-medium flex items-center space-x-1.5 shadow-xs transition cursor-pointer"
+                onclick={() => appState.setWorkspaceView('terminal')}
+                class="px-3 py-1.5 bg-white dark:bg-deck-card hover:bg-slate-100 dark:hover:bg-deck-border text-slate-800 dark:text-deck-text text-xs rounded-lg border border-deck-border font-medium flex items-center space-x-1.5 shadow-xs transition cursor-pointer"
               >
                 <Terminal class="w-3.5 h-3.5 text-blue-500" />
                 <span>Open Terminal</span>
               </button>
 
               <button
-                onclick={() => appState.toggleReview(true)}
-                class="px-3 py-1.5 bg-white dark:bg-deck-card hover:bg-gray-100 dark:hover:bg-deck-border text-slate-800 dark:text-deck-text text-xs rounded-lg border border-deck-border font-medium flex items-center space-x-1.5 shadow-xs transition cursor-pointer"
+                onclick={() => appState.setWorkspaceView('review')}
+                class="px-3 py-1.5 bg-white dark:bg-deck-card hover:bg-slate-100 dark:hover:bg-deck-border text-slate-800 dark:text-deck-text text-xs rounded-lg border border-deck-border font-medium flex items-center space-x-1.5 shadow-xs transition cursor-pointer"
               >
                 <GitCompare class="w-3.5 h-3.5 text-emerald-500" />
-                <span>Open File Review</span>
+                <span>Open Changes</span>
               </button>
 
               <button
-                onclick={() => appState.openAllPanels()}
+                onclick={() => appState.setWorkspaceView('split')}
                 class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-lg font-medium flex items-center space-x-1.5 shadow transition cursor-pointer"
               >
                 <Columns class="w-3.5 h-3.5" />
-                <span>Open Both Panels</span>
+                <span>Open Both (Split)</span>
               </button>
             </div>
           </div>
         </div>
       {/if}
-    </div>
+    </main>
   </div>
+
+  <!-- 5. Small Optional Status Bar -->
+  <StatusBar />
 
   <!-- Modals -->
   <FolderPickerModal />
@@ -280,7 +316,7 @@
 
   <!-- Toast Notification Overlay -->
   {#if appState.toastMessage}
-    <div class="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-4 duration-200">
+    <div class="fixed bottom-9 right-4 z-50 animate-in slide-in-from-bottom-4 duration-200">
       <div class="flex items-center space-x-2 px-3.5 py-2.5 rounded-lg shadow-xl border text-xs font-medium {appState.toastType === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/90 text-emerald-900 dark:text-emerald-200 border-emerald-300 dark:border-emerald-500/40' : appState.toastType === 'error' ? 'bg-rose-50 dark:bg-rose-950/90 text-rose-900 dark:text-rose-200 border-rose-300 dark:border-rose-500/40' : appState.toastType === 'loading' ? 'bg-blue-50 dark:bg-blue-950/90 text-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-500/40' : 'bg-white dark:bg-deck-card text-slate-900 dark:text-deck-bright border-deck-border'}">
         {#if appState.toastType === 'success'}
           <CheckCircle2 class="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />

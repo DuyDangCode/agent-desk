@@ -55,6 +55,19 @@ const ACTIVE_PROJECT_KEY = 'agentdeck_v2_active_project_id';
 const TEMPLATES_STORAGE_KEY = 'agentdeck_v2_templates';
 const LLM_SETTINGS_KEY = 'agentdeck_v2_llm_settings';
 const TERMINAL_SPLIT_KEY = 'agentdeck_terminal_split';
+const SIDEBAR_MODE_KEY = 'agentdeck_sidebar_mode';
+
+function getInitialSidebarMode(): 'expanded' | 'rail' | 'hidden' {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(SIDEBAR_MODE_KEY);
+      if (saved === 'expanded' || saved === 'rail' || saved === 'hidden') return saved;
+      if (window.innerWidth < 768) return 'hidden';
+      if (window.innerWidth < 1024) return 'rail';
+    } catch {}
+  }
+  return 'expanded';
+}
 
 function getInitialTerminalSplit(): number {
   if (typeof window !== 'undefined') {
@@ -281,6 +294,10 @@ class AppState {
   activeSingleTab = $state<'terminal' | 'review'>('terminal');
   showTerminal = $state<boolean>(getInitialShowTerminal());
   showReview = $state<boolean>(getInitialShowReview());
+
+  // Collapsible Sidebar & Mobile Drawer State
+  sidebarMode = $state<'expanded' | 'rail' | 'hidden'>(getInitialSidebarMode());
+  mobileSidebarOpen = $state<boolean>(false);
 
   // Folder Picker Modal
   folderPickerOpen = $state<boolean>(false);
@@ -2013,6 +2030,63 @@ class AppState {
     this.showReview = false;
     this.savePanelVisibility();
     this.notifyResize();
+  }
+
+  get workspaceView(): 'terminal' | 'review' | 'split' | 'none' {
+    if (this.showTerminal && this.showReview) return 'split';
+    if (this.showTerminal) return 'terminal';
+    if (this.showReview) return 'review';
+    return 'none';
+  }
+
+  setWorkspaceView(view: 'terminal' | 'review' | 'split') {
+    if (view === 'split') {
+      this.openAllPanels();
+    } else if (view === 'terminal') {
+      this.layoutMode = 'single';
+      this.showTerminal = true;
+      this.showReview = false;
+      this.activeSingleTab = 'terminal';
+      this.savePanelVisibility();
+      this.notifyResize();
+    } else if (view === 'review') {
+      this.layoutMode = 'single';
+      this.showTerminal = false;
+      this.showReview = true;
+      this.activeSingleTab = 'review';
+      this.savePanelVisibility();
+      this.notifyResize();
+    }
+  }
+
+  toggleSidebar() {
+    if (this.sidebarMode === 'expanded') {
+      this.sidebarMode = 'rail';
+    } else if (this.sidebarMode === 'rail') {
+      this.sidebarMode = 'expanded';
+    } else {
+      this.sidebarMode = 'expanded';
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(SIDEBAR_MODE_KEY, this.sidebarMode);
+      } catch {}
+    }
+    this.notifyResize();
+  }
+
+  setSidebarMode(mode: 'expanded' | 'rail' | 'hidden') {
+    this.sidebarMode = mode;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(SIDEBAR_MODE_KEY, mode);
+      } catch {}
+    }
+    this.notifyResize();
+  }
+
+  toggleMobileSidebar(open?: boolean) {
+    this.mobileSidebarOpen = open !== undefined ? open : !this.mobileSidebarOpen;
   }
 
   private savePanelVisibility() {

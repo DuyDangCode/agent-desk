@@ -72,17 +72,41 @@ describe('Markdown Utility & Renderer Tests', () => {
       assert.ok(html.includes('checked'));
     });
 
-    it('In-Bound: tables with column alignment', () => {
+    it('Lower Boundary: minimal table with empty cells', () => {
+      const md = '| Col 1 | Col 2 |\n| --- | --- |\n| | val |';
+      const html = renderMarkdownToHtml(md);
+
+      assert.ok(html.includes('<table'));
+      assert.ok(html.includes('overflow-x-auto'));
+      assert.ok(html.includes('Col 1'));
+      assert.ok(html.includes('val'));
+    });
+
+    it('In-Bound: tables with column alignment and responsive wrapper', () => {
       const md = '| Feature | Status | Priority |\n| :--- | :---: | ---: |\n| Markdown | Ready | High |\n| Diffs | Done | High |';
       const html = renderMarkdownToHtml(md);
 
       assert.ok(html.includes('<table'));
+      assert.ok(html.includes('overflow-x-auto'));
+      assert.ok(html.includes('overscroll-x-contain'));
       assert.ok(html.includes('<th'));
       assert.ok(html.includes('Feature'));
       assert.ok(html.includes('<td'));
       assert.ok(html.includes('Markdown'));
       assert.ok(html.includes('text-center'));
       assert.ok(html.includes('text-right'));
+    });
+
+    it('Upper Boundary: wide multi-column responsive table with formatting and tags', () => {
+      const md = '| ID | Module | Status | Latency | Errors | Notes |\n| :--- | :--- | :---: | ---: | :---: | :--- |\n| 1 | `pty` | **OK** | 12ms | 0 | Fast `<spawn>` |\n| 2 | `git` | *Warn* | 120ms | 1 | High load |';
+      const html = renderMarkdownToHtml(md);
+
+      assert.ok(html.includes('<table'));
+      assert.ok(html.includes('overflow-x-auto'));
+      assert.ok(html.includes('max-w-full'));
+      assert.ok(html.includes('<strong>OK</strong>'));
+      assert.ok(html.includes('&lt;spawn&gt;'));
+      assert.ok(html.includes('>pty</code>'));
     });
 
     it('Upper Boundary: XSS protection and HTML tag sanitization', () => {

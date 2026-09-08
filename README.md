@@ -39,6 +39,7 @@ Rather than delegating software construction entirely to autonomous systems or s
 * **Top Horizontal Project Bar:** Switch between projects instantly with sleek project tab pills displaying folder names, active Git branch badges, real-time dirty file counters, and active agent badges.
 * **Isolated Parallel Workspaces:** Each attached project maintains independent terminal PTY sessions (running in that project's `cwd`), separate Git diff trees, and selected file views without cross-project state pollution.
 * **1-Click Project Addition & Detach:** Attach new folders with the `+` button or Folder Picker, and detach finished projects with safe confirmation guards.
+* **Project Hotkey Navigation:** Instant cycling with `Ctrl+Shift+[` (previous project) and `Ctrl+Shift+]` (next project), or jump directly via `Ctrl+1..9` / `Ctrl+Alt+1..9`.
 * **Workspace Persistence:** Automatically saves all attached projects and active project focus to local storage, restoring your workspace upon restart.
 
 ### 2. 🚀 Multi-Session Embedded PTY Cockpit & Split Deck
@@ -47,15 +48,17 @@ Rather than delegating software construction entirely to autonomous systems or s
 * **Integrated Pane Toolbars:** Dedicated header controls for Pane 1 and Pane 2 featuring instant session switcher dropdowns, 1-click **Swap Panes** (`Alt+X`), **New Session in this Pane**, **Maximize to Single**, and **Close**.
 * **Focused Pane Routing & Tab Indicators:** Tabs display `P1` (blue) and `P2` (purple) badges. Quick launch actions, typed command detection, and floating **Scroll to Bottom** buttons dynamically target the focused active pane.
 * **Welcoming Pane 2 Ready State:** 1-click **Launch Shell** and **Launch AGY** buttons immediately spawn parallel sessions in secondary panes without hijacking Pane 1.
-* **Inline Tab Renaming:** Double-click any tab title or click the edit icon to rename tabs on the fly (e.g., `Antigravity Agent`, `Dev Server`, `Tests`).
+* **Inline Tab Renaming & Clean Exit Reset:** Double-click any tab title or click the edit icon to rename tabs on the fly. Automatically resets session badges (🤖 to 💻) and restores original titles when agent processes exit.
+* **Comprehensive Terminal Hotkeys:** `Ctrl+Shift+T` (new terminal session), `Ctrl+Shift+W` (close focused session with single-session safety), `Ctrl+Shift+P` (focus active terminal), and `Ctrl+Shift+Left/Right` (cycle terminal sessions).
 * **Real-Time Agent Auto-Detection:** Automatically identifies when agents (`agy`, `antigravity`, `opencode`, `claude`, `aider`, `gemini`, `goose`) are started via typed commands or output banners, and tags tabs with active agent badges (🤖 vs 💻).
 * **⚡ Quick Launch Select:** Instant dropdown menu to launch pre-configured AI coding agents or execute shell utilities (`git status`, `git diff`, `clear`).
 
-### 3. ⚡ Kernel-Level Real-Time Review Canvas
+### 3. ⚡ Kernel-Level Real-Time Review Canvas & Markdown Preview
 * **Instant In-Flight Diff Sync:** Automatic file modification detection via `notify-debouncer-mini` with instant live diff refresh (< 200ms) on agent writes.
 * **Working-Tree & Untracked File Support:** Synthesizes in-memory Myers diffs via `libgit2` and disk buffers, ensuring both tracked, untracked, and newly created files render immediately.
 * **Intra-Line Word Diffs:** Sub-token and character-level diff highlighting for precision micro-review of agent code modifications.
 * **Split & Unified Diff Views:** Toggle between Side-by-Side (Split) and Inline (Unified) diff visualizations with syntax highlighting and line numbers.
+* **📝 Rich Markdown Render Preview:** 1-click toggle between Raw Diff / Code view and rendered Markdown HTML for all markdown files (`.md`, `.markdown`, `.mdown`, `.mkdn`, `.mdx`). Supports GitHub Flavored Markdown (GFM) headers, bold/italics, strikethrough, interactive task checklists (`- [x]`), syntax-highlighted code blocks, tables with column alignment, and XSS sanitization (`javascript:` / `data:` URI neutralization), plus colored diff additions and deletions.
 
 ### 4. 🎯 Multi-Line Drag & Shift+Click Context Steering
 * **Mouse Drag & Shift+Click Selection:** Click & drag across line numbers or Shift+Click line ranges to highlight contiguous multi-line code blocks.
@@ -68,6 +71,8 @@ Rather than delegating software construction entirely to autonomous systems or s
 * **Dual List & Grid Views:** Built-in desktop-grade directory navigator with breadcrumb navigation and direct path editing.
 * **Places Sidebar:** Fast access to Home (`~`), Current Workspace, Root (`/`), and Recent Repositories.
 * **Git Repository Detection:** Live indicators highlighting Git repositories with one-click opening.
+* **📁 Directory Creation ("New Folder"):** Create new directories directly in the browser with modal input, path validation, and directory traversal safeguards.
+* **⚡ 1-Click Git Initialization ("Init Git"):** Initialize a Git repository on any plain folder with 1 click and optional automatic attachment to the workspace deck.
 
 ### 6. 🎨 Multi-Theme Harmony & Settings Modal
 * **5 Cohesive Color Themes:** High-contrast **Black (GitHub Dark)**, clean **White (Light)**, **One Dark Pro**, **Dracula**, and **Nord Ice** palettes.
@@ -78,6 +83,8 @@ Rather than delegating software construction entirely to autonomous systems or s
 * **Granular Hunk Control:** Stage or unstage individual diff hunks or entire files directly in the review canvas.
 * **Hallucination Discard:** Revert individual hunks or entire modified files with confirmation safety guards.
 * **In-Process Commit Engine:** Native atomic commit panel powered by `git2-rs` with optional AI-assisted commit message generation.
+* **⏳ Real-Time Push & Pull Loading Notification:** Persistent animated spinner toast (`Loader2 animate-spin`) during active `git push` and `git pull` operations, cleanly transitioning to success or error summaries.
+* **Remote Branch Checkout Guard:** Prevents direct checkout of remote branches and guides users to create local tracking branches safely.
 
 ### 8. 🪶 Ultra-Low Resource Footprint
 * Idle RAM consumption **< 50MB** (single project) and **< 90MB** (3 parallel projects) with cold startup **< 400ms**—freeing up system resources for local agent inference and compilation.
@@ -183,10 +190,10 @@ agent_deck/
 │   └── Cargo.toml           # Server dependencies
 ├── src/                     # Svelte 5 Frontend
 │   ├── lib/
-│   │   ├── components/      # UI components (Header, ProjectBar, TerminalView, FileList, DiffView, SteerModal, CommitPanel, FolderPickerModal)
+│   │   ├── components/      # UI components (Header, ProjectBar, TerminalView, FileList, DiffView, MarkdownPreview, SteerModal, CommitPanel, FolderPickerModal)
 │   │   ├── stores/          # Svelte 5 Runes state store (appState.svelte.ts)
 │   │   ├── types/           # TypeScript interfaces & data models
-│   │   └── utils/           # Tauri & Server IPC bridge (tauri.ts)
+│   │   └── utils/           # Tauri & Server IPC bridge (tauri.ts), GFM parser (markdown.ts)
 │   ├── App.svelte           # Main workspace layout shell & resizable split pane
 │   ├── app.css              # Global styles & Tailwind CSS directives
 │   └── main.ts              # Frontend bootstrap

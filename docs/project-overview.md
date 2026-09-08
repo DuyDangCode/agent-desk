@@ -84,7 +84,7 @@ To act as the **primary harness** for any CLI coding agent: giving developers fu
 ### 4.1. Multi-Project Management & Horizontal Navigation Bar
 * **Parallel Multi-Folder Attachment:** Attach multiple repositories or project folders simultaneously.
 * **Top Horizontal Project Bar:** Visual tab bar displaying all attached projects as distinct pills with project folder icons, active Git branch badges, real-time dirty file counters, and active agent status indicators.
-* **Instant Project Switching:** Switch between open projects via mouse click or hotkeys (`Ctrl+Alt+Left/Right`, `Ctrl+1..9`) with zero reloading latency.
+* **Instant Project Switching:** Switch between open projects via mouse click or hotkeys (`Ctrl+Shift+[` / `Ctrl+Shift+]`, `Ctrl+Alt+Left/Right`, `Ctrl+1..9`) with zero reloading latency.
 * **Isolated Project Workspaces:** Each attached project retains its own independent state:
   * Scoped terminal/PTY sessions running in that project's working directory (`cwd`).
   * Dedicated file modification list and diff canvas state.
@@ -95,11 +95,16 @@ To act as the **primary harness** for any CLI coding agent: giving developers fu
 * **Universal Compatibility:** Communicates via operating-system pseudo-terminals (`portable-pty`). Zero customized agent adapters needed—works with Antigravity (AGY), OpenCode, Claude Code, Aider, Gemini CLI, Goose, or raw Bash/Zsh scripts out of the box.
 * **Full Terminal Capabilities:** Full support for curses interfaces, colors, progress bars, interactive keyboard inputs, and terminal navigation.
 * **Multi-Session Deck:** Run and monitor multiple agents or shell commands simultaneously across segregated tabs with inline tab renaming and real-time agent identification.
+* **Dynamic Split Cockpit:** Single, horizontal, and vertical split layouts with dedicated pane toolbars, 1-click pane swap (`Alt+X`), and focused pane routing.
+* **Terminal Hotkey Navigation:** Fast keyboard workflows (`Ctrl+Shift+T` new session, `Ctrl+Shift+W` close session, `Ctrl+Shift+P` focus terminal, `Ctrl+Shift+Left/Right` cycle sessions).
+* **Agent Exit Clean-up:** Automatically resets session badges (🤖 to 💻) and restores shell titles when agent subprocesses exit.
 * **Unicode 11 Support:** Crystal-clear rendering of emoji badges, box-drawing characters (`╭`, `│`, `✔`), and glyphs without line misalignment.
 
-### 4.3. Real-Time Human Review Canvas
+### 4.3. Real-Time Human Review Canvas & Markdown Engine
 * **Live In-Flight Diffs:** As the coding agent writes code onto the disk, the native debounced file-system watcher refreshes the diff viewer automatically without blocking the UI thread.
 * **Myers Diff Synthesis:** Generates accurate in-memory diffs against Git HEAD/Index for newly created, unstaged, and untracked files.
+* **Intra-Line Token Diffs:** Word and character-level micro-diff highlighting via the `similar` Rust engine.
+* **📝 Rich Markdown Render Preview:** 1-click toggle between Raw Diff / Code view and rendered Markdown HTML for `.md`, `.markdown`, and `.mdx` files. Includes GFM tables, task checklists (`- [x]`), syntax-highlighted code blocks, and sanitization.
 * **Side-by-Side Verification:** Clear, color-coded visual representations of modifications, deletions, and structural syntax updates.
 * **Hunk-Level Control:** Accept, reject, or stage individual hunks or specific lines before the agent moves on to subsequent tasks.
 
@@ -115,9 +120,13 @@ To act as the **primary harness** for any CLI coding agent: giving developers fu
   ```
 * **🛡️ Stdin Bracketed Paste Mode:** Streams the prompt directly into the agent’s running terminal session wrapped in bracketed paste escape sequences (`\x1b[200~` ... `\x1b[201~`) with an automated carriage return (`\r`), preventing premature newline execution and preserving interactive CLI layouts.
 
-### 4.5. Integrated Release & Commit Gate
+### 4.5. Integrated Release, File Explorer & Commit Gate
 * **Human-Gated Approval:** Ensure autonomous agent output is verified by a human before hitting version control.
 * **Hunk Staging & Git Operations:** Stage selected blocks, discard unwanted agent hallucinations, and execute commits natively via `libgit2`.
+* **AI-Assisted Commit Synthesis:** 1-click synthesis of conventional commit messages based on staged hunks.
+* **⏳ Real-Time Push & Pull Loading Feedback:** Persistent animated loading toast indicator during remote Git operations.
+* **📁 In-Explorer Directory & Repository Management:** Create new directories and initialize Git repositories (`git init`) directly from the desktop File Explorer (`FolderPickerModal`).
+* **Remote Branch Guard:** Disallow invalid remote branch checkouts, protecting developers from detached states.
 
 ---
 

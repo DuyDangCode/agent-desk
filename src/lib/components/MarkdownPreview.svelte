@@ -111,7 +111,7 @@
   </div>
 
   <!-- Main Scrollable Markdown Content -->
-  <div class="flex-1 overflow-y-auto p-6 md:p-8">
+  <div class="flex-1 overflow-y-auto p-3 sm:p-6 md:p-8">
     <div class="max-w-4xl mx-auto">
       {#if showRaw}
         <!-- Raw Markdown Source -->
@@ -152,5 +152,15 @@
   }
   :global(.markdown-body table) {
     border-collapse: collapse;
+    width: 100%;
+    min-width: 100%;
+  }
+  :global(.markdown-body th),
+  :global(.markdown-body td) {
+    vertical-align: middle;
+  }
+  :global(.markdown-body .overflow-x-auto) {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
   }
 </style>

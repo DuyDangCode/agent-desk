@@ -45,6 +45,68 @@ class TestAppState {
   standaloneTerminalLayout: 'single' | 'split-horizontal' | 'split-vertical' = 'single';
   standaloneSplitPercent = 50;
 
+  // Layout and view preferences
+  showTerminal = true;
+  showReview = true;
+  layoutMode: 'split' | 'single' = 'split';
+  activeSingleTab: 'terminal' | 'review' = 'terminal';
+
+  // Sidebar and navigation states
+  sidebarMode: 'expanded' | 'rail' | 'hidden' = 'expanded';
+  mobileSidebarOpen = false;
+
+  openAllPanels() {
+    this.showTerminal = true;
+    this.showReview = true;
+    this.layoutMode = 'split';
+  }
+
+  closeAllPanels() {
+    this.showTerminal = false;
+    this.showReview = false;
+  }
+
+  get workspaceView(): 'terminal' | 'review' | 'split' | 'none' {
+    if (this.showTerminal && this.showReview) return 'split';
+    if (this.showTerminal) return 'terminal';
+    if (this.showReview) return 'review';
+    return 'none';
+  }
+
+  setWorkspaceView(view: 'terminal' | 'review' | 'split') {
+    if (view === 'split') {
+      this.openAllPanels();
+    } else if (view === 'terminal') {
+      this.layoutMode = 'single';
+      this.showTerminal = true;
+      this.showReview = false;
+      this.activeSingleTab = 'terminal';
+    } else if (view === 'review') {
+      this.layoutMode = 'single';
+      this.showTerminal = false;
+      this.showReview = true;
+      this.activeSingleTab = 'review';
+    }
+  }
+
+  toggleSidebar() {
+    if (this.sidebarMode === 'expanded') {
+      this.sidebarMode = 'rail';
+    } else if (this.sidebarMode === 'rail') {
+      this.sidebarMode = 'expanded';
+    } else {
+      this.sidebarMode = 'expanded';
+    }
+  }
+
+  setSidebarMode(mode: 'expanded' | 'rail' | 'hidden') {
+    this.sidebarMode = mode;
+  }
+
+  toggleMobileSidebar(open?: boolean) {
+    this.mobileSidebarOpen = open !== undefined ? open : !this.mobileSidebarOpen;
+  }
+
   ensureStandaloneSessions() {
     if (this.standaloneSessions.length === 0) {
       const initialId = 'session-standalone-1';
@@ -1313,6 +1375,107 @@ describe('Push & Pull Code Loading Toast Notification Lifecycle', () => {
       assert.equal(state.isPulling, false);
       assert.equal(state.toastMessage, 'Pull failed: Merge conflict in src/App.svelte');
       assert.equal(state.toastType, 'error');
+    });
+  });
+
+  describe('Simplified UI Layout & Primary Navigation Boundary Tests', () => {
+    describe('Workspace View Switcher Boundary Tests', () => {
+      it('Lower Boundary: starts in split view, closes all panels to "none", and switches cleanly to "terminal"', () => {
+        assert.equal(state.workspaceView, 'split');
+        state.closeAllPanels();
+        assert.equal(state.workspaceView, 'none');
+        assert.equal(state.showTerminal, false);
+        assert.equal(state.showReview, false);
+
+        state.setWorkspaceView('terminal');
+        assert.equal(state.workspaceView, 'terminal');
+        assert.equal(state.showTerminal, true);
+        assert.equal(state.showReview, false);
+        assert.equal(state.layoutMode, 'single');
+        assert.equal(state.activeSingleTab, 'terminal');
+      });
+
+      it('In-Bound: switches cleanly between terminal, review, and split views', () => {
+        state.setWorkspaceView('review');
+        assert.equal(state.workspaceView, 'review');
+        assert.equal(state.showTerminal, false);
+        assert.equal(state.showReview, true);
+        assert.equal(state.layoutMode, 'single');
+        assert.equal(state.activeSingleTab, 'review');
+
+        state.setWorkspaceView('split');
+        assert.equal(state.workspaceView, 'split');
+        assert.equal(state.showTerminal, true);
+        assert.equal(state.showReview, true);
+        assert.equal(state.layoutMode, 'split');
+
+        state.setWorkspaceView('terminal');
+        assert.equal(state.workspaceView, 'terminal');
+        assert.equal(state.showTerminal, true);
+        assert.equal(state.showReview, false);
+      });
+
+      it('Upper Boundary: repeated identical view calls remain idempotent without state mutation', () => {
+        state.setWorkspaceView('terminal');
+        assert.equal(state.workspaceView, 'terminal');
+        state.setWorkspaceView('terminal');
+        assert.equal(state.workspaceView, 'terminal');
+        assert.equal(state.showTerminal, true);
+        assert.equal(state.showReview, false);
+
+        state.setWorkspaceView('split');
+        state.setWorkspaceView('split');
+        assert.equal(state.workspaceView, 'split');
+        assert.equal(state.showTerminal, true);
+        assert.equal(state.showReview, true);
+      });
+    });
+
+    describe('Sidebar Mode & Responsive Drawer Boundary Tests', () => {
+      it('Lower Boundary: toggleSidebar cycles cleanly between expanded and rail', () => {
+        assert.equal(state.sidebarMode, 'expanded');
+
+        state.toggleSidebar();
+        assert.equal(state.sidebarMode, 'rail');
+
+        state.toggleSidebar();
+        assert.equal(state.sidebarMode, 'expanded');
+      });
+
+      it('In-Bound: explicit setSidebarMode sets expanded, rail, and hidden modes', () => {
+        state.setSidebarMode('rail');
+        assert.equal(state.sidebarMode, 'rail');
+
+        state.setSidebarMode('hidden');
+        assert.equal(state.sidebarMode, 'hidden');
+
+        // From hidden, toggleSidebar restores to expanded
+        state.toggleSidebar();
+        assert.equal(state.sidebarMode, 'expanded');
+      });
+
+      it('In-Bound: mobile sidebar drawer toggle open and close', () => {
+        assert.equal(state.mobileSidebarOpen, false);
+
+        state.toggleMobileSidebar();
+        assert.equal(state.mobileSidebarOpen, true);
+
+        state.toggleMobileSidebar();
+        assert.equal(state.mobileSidebarOpen, false);
+
+        state.toggleMobileSidebar(true);
+        assert.equal(state.mobileSidebarOpen, true);
+
+        state.toggleMobileSidebar(false);
+        assert.equal(state.mobileSidebarOpen, false);
+      });
+
+      it('Upper Boundary: multiple drawer toggles maintain consistent boolean state', () => {
+        for (let i = 0; i < 10; i++) {
+          state.toggleMobileSidebar();
+        }
+        assert.equal(state.mobileSidebarOpen, false);
+      });
     });
   });
 });

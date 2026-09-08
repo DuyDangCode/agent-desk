@@ -38,6 +38,7 @@ The **Reviewer Agent** acts as an independent quality gatekeeper, evaluating the
    - Check for unnecessary memory allocations, redundant cloning, memory leaks, and inefficient async/I/O patterns.
 2. **Clean Code & Simplicity**:
    - **Simplicity**: Can the code be implemented in a simpler, more direct manner?
+   - **UI Design Simplicity**: For UI components and layout modifications, evaluate compliance with [`.agents/rules/ui-development.md`](file:///home/thanhduy/Projects/agent_deck/.agents/rules/ui-development.md) and the 13-point UI Review Checklist in [`.agents/skills/ui-development/SKILL.md`](file:///home/thanhduy/Projects/agent_deck/.agents/skills/ui-development/SKILL.md).
    - **Clarity**: Are variable/function names clear, intention-revealing, and self-documenting?
    - **Maintainability**: Adherence to DRY, KISS, Single Responsibility, and idiomatic project style.
 3. **Cross-Component Impact & Regression Prevention**:
