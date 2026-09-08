@@ -89,6 +89,13 @@ impl PtyManager {
         cmd.env("COLORTERM", "truecolor");
         cmd.env("LANG", "en_US.UTF-8");
         cmd.env("LC_ALL", "en_US.UTF-8");
+        cmd.env("AGENTDECK_SESSION_ID", &session_id);
+        cmd.env("AGENTDECK_PORT", "4020");
+        if let Some(ref dir) = cwd {
+            if !dir.is_empty() {
+                cmd.env("AGENTDECK_PROJECT_PATH", dir);
+            }
+        }
 
         let mut child = pair
             .slave

@@ -17,7 +17,9 @@
     ArrowUp,
     Archive,
     Settings,
-    CheckSquare
+    CheckSquare,
+    AlertCircle,
+    Globe
   } from 'lucide-svelte';
 
   let moreMenuOpen = $state(false);
@@ -113,15 +115,23 @@
     >
       <Terminal class="w-3.5 h-3.5" />
       <span class="hidden md:inline">Terminal</span>
-      {#if hasAgentSession}
+      {#if appState.hasAttentionAlert}
+        <span class="w-2 h-2 rounded-full bg-amber-500 animate-bounce" title="Agent needs attention"></span>
+      {:else if hasAgentSession}
         <span class="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"></span>
       {/if}
     </button>
 
     <!-- File Changes Review Tab Button -->
     <button
-      onclick={() => appState.setWorkspaceView('review')}
-      class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md transition cursor-pointer {appState.workspaceView === 'review' ? 'bg-white dark:bg-deck-bg text-emerald-600 dark:text-emerald-400 shadow-xs font-semibold' : 'text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright'}"
+      onclick={() => {
+        if (appState.workspaceView === 'split') {
+          appState.setCanvasTab('diff');
+        } else {
+          appState.setWorkspaceView('review');
+        }
+      }}
+      class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md transition cursor-pointer {appState.workspaceView === 'review' && appState.activeCanvasTab === 'diff' ? 'bg-white dark:bg-deck-bg text-emerald-600 dark:text-emerald-400 shadow-xs font-semibold' : 'text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright'}"
       title="File Changes & Diff Review"
     >
       <GitCompare class="w-3.5 h-3.5" />
@@ -133,11 +143,30 @@
       {/if}
     </button>
 
+    <!-- Web Preview & Component Steering Tab Button -->
+    <button
+      onclick={() => {
+        if (appState.workspaceView === 'split') {
+          appState.setCanvasTab('preview');
+        } else {
+          appState.setWorkspaceView('preview');
+        }
+      }}
+      class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md transition cursor-pointer {appState.workspaceView === 'review' && appState.activeCanvasTab === 'preview' ? 'bg-white dark:bg-deck-bg text-blue-600 dark:text-blue-400 shadow-xs font-semibold' : 'text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright'}"
+      title="Frontend Webview Preview & Direct Component Steering"
+    >
+      <Globe class="w-3.5 h-3.5" />
+      <span class="hidden md:inline">Preview</span>
+      {#if appState.isInspectMode}
+        <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping"></span>
+      {/if}
+    </button>
+
     <!-- Split View (Both Panes Side-by-Side) -->
     <button
       onclick={() => appState.setWorkspaceView('split')}
       class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md transition cursor-pointer {appState.workspaceView === 'split' ? 'bg-white dark:bg-deck-bg text-blue-600 dark:text-blue-400 shadow-xs font-semibold' : 'text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright'}"
-      title="Split View (Terminal + Changes)"
+      title="Split View (Terminal + Canvas)"
     >
       <Columns class="w-3.5 h-3.5" />
       <span class="hidden md:inline">Split</span>
@@ -146,6 +175,19 @@
 
   <!-- Right Cluster: Essential Actions + Secondary More Dropdown -->
   <div class="flex items-center space-x-2 relative">
+    <!-- Attention Alert Pill -->
+    {#if appState.hasAttentionAlert}
+      {@const alertSess = appState.attentionSessions[0]}
+      <button
+        onclick={() => appState.navigateToSession(undefined, alertSess?.id)}
+        class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-medium text-xs shadow-xs animate-pulse transition cursor-pointer"
+        title="Coding Agent requires your attention ({alertSess?.title || 'Terminal'})"
+      >
+        <AlertCircle class="w-3.5 h-3.5 animate-bounce" />
+        <span class="hidden sm:inline">{alertSess?.attentionState === 'permission_required' ? 'Permission Needed' : 'Input Needed'}</span>
+      </button>
+    {/if}
+
     <!-- Refresh Button -->
     <button
       onclick={() => appState.refreshDiffs(false)}

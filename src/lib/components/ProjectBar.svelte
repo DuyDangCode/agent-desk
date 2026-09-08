@@ -64,12 +64,13 @@
     {#each appState.projects as project, idx (project.id)}
       {@const isActive = project.id === appState.activeProjectId}
       {@const hasAgents = project.sessions.some((s) => s.isAgent)}
+      {@const needsAttention = appState.isProjectAttentionRequired(project.id)}
       {@const dirtyCount = (project.info?.staged_count || 0) + (project.info?.unstaged_count || 0) + (project.info?.untracked_count || 0)}
       {@const stagedCount = project.info?.staged_count || 0}
       {@const unstagedCount = project.info?.unstaged_count || 0}
 
       <div
-        class="group relative shrink-0 flex items-center space-x-2 px-3.5 py-1.5 text-xs rounded-lg transition-all duration-150 cursor-pointer border {isActive ? 'bg-white dark:bg-deck-bg text-slate-900 dark:text-deck-bright border-blue-500/80 shadow-xs font-semibold ring-1 ring-blue-500/20' : 'bg-slate-200/60 dark:bg-deck-surface/70 hover:bg-slate-200 dark:hover:bg-deck-surface text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright border-transparent'}"
+        class="group relative shrink-0 flex items-center space-x-2 px-3.5 py-1.5 text-xs rounded-lg transition-all duration-150 cursor-pointer border {needsAttention ? 'border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 ring-1 ring-amber-500/30' : isActive ? 'bg-white dark:bg-deck-bg text-slate-900 dark:text-deck-bright border-blue-500/80 shadow-xs font-semibold ring-1 ring-blue-500/20' : 'bg-slate-200/60 dark:bg-deck-surface/70 hover:bg-slate-200 dark:hover:bg-deck-surface text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright border-transparent'}"
         onclick={() => appState.switchProject(project.id)}
         role="tab"
         tabindex="0"
@@ -80,7 +81,7 @@
       >
         <!-- Project Icon & Hotkey index -->
         <div class="flex items-center space-x-1 shrink-0">
-          <FolderGit2 class="w-3.5 h-3.5 {isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-deck-muted'}" />
+          <FolderGit2 class="w-3.5 h-3.5 {needsAttention ? 'text-amber-500' : isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-deck-muted'}" />
           {#if idx < 9}
             <span class="text-[9px] font-mono text-slate-400 dark:text-deck-muted/70 px-1 py-0.2 rounded bg-slate-300/40 dark:bg-deck-card" title="Switch to project (Ctrl+{idx + 1})">
               {idx + 1}
@@ -101,8 +102,13 @@
           </span>
         {/if}
 
-        <!-- Active Agent Indicator Badge -->
-        {#if hasAgents}
+        <!-- Attention Indicator or Agent Badge -->
+        {#if needsAttention}
+          <span class="flex items-center space-x-1 px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 text-[10px] font-mono shrink-0 border border-amber-300 dark:border-amber-500/40 animate-pulse" title="Agent needs input or approval">
+            <AlertCircle class="w-3 h-3 text-amber-500 animate-bounce" />
+            <span class="hidden md:inline">Attention</span>
+          </span>
+        {:else if hasAgents}
           <span class="flex items-center space-x-1 px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-300 text-[10px] font-mono shrink-0 border border-purple-300 dark:border-purple-500/30" title="Active AI Coding Agent running in this project">
             <Bot class="w-3 h-3 text-purple-600 dark:text-purple-400 animate-pulse" />
             <span class="hidden md:inline">Agent</span>

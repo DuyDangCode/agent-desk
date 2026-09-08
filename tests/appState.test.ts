@@ -32,6 +32,22 @@ interface ProjectItem {
   isLoading: boolean;
 }
 
+interface TerminalSettings {
+  shell: string;
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+  fontWeight: '300' | '400' | '500' | '600' | '700';
+  fontWeightBold: '500' | '600' | '700' | '800' | '900';
+  cursorStyle: 'bar' | 'block' | 'underline';
+  cursorBlink: boolean;
+  scrollback: number;
+  fastScrollSensitivity: number;
+  drawBoldTextInBrightColors: boolean;
+  nerdFont: boolean;
+}
+
 // Minimal reproduction of AppState core project and session management for rigorous boundary testing
 class TestAppState {
   projects: ProjectItem[] = [];
@@ -44,6 +60,59 @@ class TestAppState {
   standaloneFocusedPane: 'primary' | 'secondary' = 'primary';
   standaloneTerminalLayout: 'single' | 'split-horizontal' | 'split-vertical' = 'single';
   standaloneSplitPercent = 50;
+
+  // Terminal Settings
+  terminalSettings: TerminalSettings = {
+    shell: '',
+    fontFamily: 'JetBrains Mono, Menlo, Monaco, "Courier New", monospace',
+    fontSize: 13,
+    lineHeight: 1.25,
+    letterSpacing: 0,
+    fontWeight: '400',
+    fontWeightBold: '700',
+    cursorStyle: 'bar',
+    cursorBlink: true,
+    scrollback: 10000,
+    fastScrollSensitivity: 5,
+    drawBoldTextInBrightColors: true,
+    nerdFont: true,
+  };
+
+  settingsModalOpen = false;
+  settingsModalTab: 'appearance' | 'terminal' | 'templates' | 'llm' | 'integrations' | 'shortcuts' | 'about' = 'appearance';
+
+  openSettings(tab?: 'appearance' | 'terminal' | 'templates' | 'llm' | 'integrations' | 'shortcuts' | 'about') {
+    if (tab) {
+      this.settingsModalTab = tab;
+    }
+    this.settingsModalOpen = true;
+  }
+
+  closeSettings() {
+    this.settingsModalOpen = false;
+  }
+
+  saveTerminalSettings(settings: Partial<TerminalSettings>) {
+    this.terminalSettings = { ...this.terminalSettings, ...settings };
+  }
+
+  resetTerminalSettings() {
+    this.terminalSettings = {
+      shell: '',
+      fontFamily: 'JetBrains Mono, Menlo, Monaco, "Courier New", monospace',
+      fontSize: 13,
+      lineHeight: 1.25,
+      letterSpacing: 0,
+      fontWeight: '400',
+      fontWeightBold: '700',
+      cursorStyle: 'bar',
+      cursorBlink: true,
+      scrollback: 10000,
+      fastScrollSensitivity: 5,
+      drawBoldTextInBrightColors: true,
+      nerdFont: true,
+    };
+  }
 
   // Layout and view preferences
   showTerminal = true;
@@ -1476,6 +1545,126 @@ describe('Push & Pull Code Loading Toast Notification Lifecycle', () => {
         }
         assert.equal(state.mobileSidebarOpen, false);
       });
+    });
+  });
+
+  describe('Terminal Configuration & Settings Management', () => {
+    let state: TestAppState;
+
+    beforeEach(() => {
+      state = new TestAppState();
+    });
+
+    it('Lower Boundary: default terminal settings initialize with standard expected values', () => {
+      assert.equal(state.terminalSettings.shell, '');
+      assert.equal(state.terminalSettings.fontSize, 13);
+      assert.equal(state.terminalSettings.lineHeight, 1.25);
+      assert.equal(state.terminalSettings.letterSpacing, 0);
+      assert.equal(state.terminalSettings.fontWeight, '400');
+      assert.equal(state.terminalSettings.fontWeightBold, '700');
+      assert.equal(state.terminalSettings.cursorStyle, 'bar');
+      assert.equal(state.terminalSettings.cursorBlink, true);
+      assert.equal(state.terminalSettings.scrollback, 10000);
+      assert.equal(state.terminalSettings.fastScrollSensitivity, 5);
+      assert.equal(state.terminalSettings.drawBoldTextInBrightColors, true);
+      assert.equal(state.terminalSettings.nerdFont, true);
+    });
+
+    it('In-Bound: customize shell path, font family, and font size', () => {
+      state.saveTerminalSettings({
+        shell: '/bin/zsh',
+        fontFamily: 'Fira Code, monospace',
+        fontSize: 15,
+      });
+
+      assert.equal(state.terminalSettings.shell, '/bin/zsh');
+      assert.equal(state.terminalSettings.fontFamily, 'Fira Code, monospace');
+      assert.equal(state.terminalSettings.fontSize, 15);
+      // Other settings remain untouched
+      assert.equal(state.terminalSettings.cursorStyle, 'bar');
+      assert.equal(state.terminalSettings.lineHeight, 1.25);
+    });
+
+    it('In-Bound: customize Nerd Font option and presets', () => {
+      // Toggle nerdFont off
+      state.saveTerminalSettings({ nerdFont: false });
+      assert.equal(state.terminalSettings.nerdFont, false);
+
+      // Select a Nerd Font preset family and re-enable nerdFont
+      state.saveTerminalSettings({
+        fontFamily: "'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace",
+        nerdFont: true,
+      });
+      assert.equal(state.terminalSettings.fontFamily, "'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace");
+      assert.equal(state.terminalSettings.nerdFont, true);
+    });
+
+    it('In-Bound: customize cursor styling and animation', () => {
+      state.saveTerminalSettings({
+        cursorStyle: 'block',
+        cursorBlink: false,
+      });
+      assert.equal(state.terminalSettings.cursorStyle, 'block');
+      assert.equal(state.terminalSettings.cursorBlink, false);
+
+      state.saveTerminalSettings({
+        cursorStyle: 'underline',
+        cursorBlink: true,
+      });
+      assert.equal(state.terminalSettings.cursorStyle, 'underline');
+      assert.equal(state.terminalSettings.cursorBlink, true);
+    });
+
+    it('Upper Boundary: high scrollback buffer and large font size', () => {
+      state.saveTerminalSettings({
+        fontSize: 24,
+        lineHeight: 2.0,
+        scrollback: 50000,
+        fastScrollSensitivity: 20,
+      });
+
+      assert.equal(state.terminalSettings.fontSize, 24);
+      assert.equal(state.terminalSettings.lineHeight, 2.0);
+      assert.equal(state.terminalSettings.scrollback, 50000);
+      assert.equal(state.terminalSettings.fastScrollSensitivity, 20);
+    });
+
+    it('Reset Boundary: resetTerminalSettings restores all defaults', () => {
+      state.saveTerminalSettings({
+        shell: '/usr/local/bin/fish',
+        fontSize: 20,
+        cursorStyle: 'block',
+        scrollback: 30000,
+      });
+
+      assert.equal(state.terminalSettings.shell, '/usr/local/bin/fish');
+      assert.equal(state.terminalSettings.fontSize, 20);
+
+      state.resetTerminalSettings();
+
+      assert.equal(state.terminalSettings.shell, '');
+      assert.equal(state.terminalSettings.fontSize, 13);
+      assert.equal(state.terminalSettings.cursorStyle, 'bar');
+      assert.equal(state.terminalSettings.scrollback, 10000);
+    });
+
+    it('Settings Modal Tab: opens terminal settings tab cleanly and preserves tab when reopened without args', () => {
+      assert.equal(state.settingsModalOpen, false);
+      state.openSettings('terminal');
+      assert.equal(state.settingsModalOpen, true);
+      assert.equal(state.settingsModalTab, 'terminal');
+
+      // Saving terminal settings retains the terminal tab
+      state.saveTerminalSettings({ fontSize: 16 });
+      assert.equal(state.settingsModalTab, 'terminal');
+
+      state.closeSettings();
+      assert.equal(state.settingsModalOpen, false);
+
+      // Reopening without tab argument keeps the current tab
+      state.openSettings();
+      assert.equal(state.settingsModalOpen, true);
+      assert.equal(state.settingsModalTab, 'terminal');
     });
   });
 });

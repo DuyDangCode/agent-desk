@@ -8,6 +8,7 @@
   import { appState } from '$lib/stores/appState.svelte';
   import { themeState } from '$lib/stores/theme.svelte';
   import type { AgentKind, TerminalLayout } from '$lib/types';
+  import { detectInteractivePrompt } from '$lib/utils/notifications';
   import { 
     spawnPty, 
     writePty, 
@@ -29,7 +30,9 @@
     ArrowDown,
     ArrowRightLeft,
     Maximize2,
-    Sparkles
+    Sparkles,
+    AlertCircle,
+    ChevronDown
   } from 'lucide-svelte';
 
   interface SessionTerminal {
@@ -45,6 +48,8 @@
   // Persistent module-level terminal cache
   const terminalMap = new Map<string, SessionTerminal>();
   const sessionInputBuffers = new Map<string, string>();
+  const sessionOutputBuffers = new Map<string, string>();
+  const lastDetectedPromptMap = new Map<string, number>();
 
   let unlistenOutput: (() => void) | null = null;
   let unlistenExit: (() => void) | null = null;
@@ -61,6 +66,12 @@
 
   // Quick Launch Dropdown State
   let selectedQuickAction = $state<string>('');
+  let isQuickLaunchOpen = $state(false);
+  let isPane1SessionDropdownOpen = $state(false);
+  let isPane2SessionDropdownOpen = $state(false);
+
+  const pane1Session = $derived(appState.sessions.find((s) => s.id === appState.activeSessionId));
+  const pane2Session = $derived(appState.sessions.find((s) => s.id === appState.secondarySessionId));
 
   // Split Divider Drag State
   let isResizingSplit = $state(false);
@@ -142,8 +153,8 @@
     }
   }
 
-  function onSelectQuickAction(e: Event) {
-    const val = (e.target as HTMLSelectElement).value;
+  function executeQuickAction(val: string) {
+    isQuickLaunchOpen = false;
     if (!val) return;
 
     if (val === 'reset_shell') {
@@ -152,7 +163,6 @@
         appState.setSessionAgent(targetSessionId, false, 'shell');
         appState.showToast('Reset terminal session to Standard Shell', 'info');
       }
-      selectedQuickAction = '';
       return;
     }
 
@@ -161,7 +171,6 @@
       if (targetSessionId) {
         appState.toggleSessionAgent(targetSessionId);
       }
-      selectedQuickAction = '';
       return;
     }
 
@@ -181,11 +190,21 @@
     if (action) {
       handleQuickCmd(action.cmd, action.agentKind);
     }
+  }
+
+  function onSelectQuickAction(e: Event) {
+    const val = (e.target as HTMLSelectElement).value;
+    executeQuickAction(val);
     selectedQuickAction = '';
   }
 
   // Real-time typed command agent start/exit detection
   function detectAgentFromTypedInput(sessionId: string, data: string) {
+    if (data && data.length > 0) {
+      appState.clearSessionAttention(sessionId);
+      sessionOutputBuffers.set(sessionId, '');
+      lastDetectedPromptMap.delete(sessionId);
+    }
     let buf = sessionInputBuffers.get(sessionId) || '';
     if (data === '\r' || data === '\n') {
       const trimmed = buf.trim().toLowerCase();
@@ -379,8 +398,40 @@
     }
   }
 
+  function resolveFontFamily(family: string, nerdFont: boolean): string {
+    if (!nerdFont) return family;
+    if (/nerd font/i.test(family)) return family;
+    return `'Symbols Nerd Font', 'Symbols Nerd Font Mono', ${family}`;
+  }
+
+  function applyTerminalSettingsToAllTerminals() {
+    const s = appState.terminalSettings;
+    for (const st of terminalMap.values()) {
+      st.term.options.fontFamily = resolveFontFamily(s.fontFamily, s.nerdFont);
+      st.term.options.fontSize = s.fontSize;
+      st.term.options.lineHeight = s.lineHeight;
+      st.term.options.fontWeight = s.fontWeight as any;
+      st.term.options.fontWeightBold = s.fontWeightBold as any;
+      st.term.options.letterSpacing = s.letterSpacing;
+      st.term.options.cursorStyle = s.cursorStyle;
+      st.term.options.cursorBlink = s.cursorBlink;
+      st.term.options.scrollback = s.scrollback;
+      st.term.options.fastScrollSensitivity = s.fastScrollSensitivity;
+      st.term.options.drawBoldTextInBrightColors = s.drawBoldTextInBrightColors;
+      try {
+        st.fitAddon.fit();
+      } catch {}
+    }
+  }
+
   $effect(() => {
     applyThemeToAllTerminals();
+  });
+
+  $effect(() => {
+    // Read reactive terminal settings to trigger updates
+    const _ = appState.terminalSettings;
+    applyTerminalSettingsToAllTerminals();
   });
 
   function getOrCreateSessionTerminal(sessionId: string): SessionTerminal {
@@ -393,22 +444,23 @@
     wrapper.className = 'w-full h-full overflow-hidden';
     wrapper.style.backgroundColor = currentTheme.background;
 
+    const ts = appState.terminalSettings;
     const term = new Terminal({
-      cursorBlink: true,
-      cursorStyle: 'bar',
-      fontSize: 13,
-      fontWeight: '400',
-      fontWeightBold: '700',
-      lineHeight: 1.25,
-      letterSpacing: 0,
-      drawBoldTextInBrightColors: true,
-      fontFamily: 'JetBrains Mono, Menlo, Monaco, "Courier New", monospace',
+      cursorBlink: ts.cursorBlink,
+      cursorStyle: ts.cursorStyle,
+      fontSize: ts.fontSize,
+      fontWeight: ts.fontWeight as any,
+      fontWeightBold: ts.fontWeightBold as any,
+      lineHeight: ts.lineHeight,
+      letterSpacing: ts.letterSpacing,
+      drawBoldTextInBrightColors: ts.drawBoldTextInBrightColors,
+      fontFamily: resolveFontFamily(ts.fontFamily, ts.nerdFont),
       theme: currentTheme,
       allowProposedApi: true,
-      scrollback: 10000,
+      scrollback: ts.scrollback,
       scrollOnUserInput: true,
       fastScrollModifier: 'alt',
-      fastScrollSensitivity: 5,
+      fastScrollSensitivity: ts.fastScrollSensitivity,
       scrollSensitivity: 1,
     });
 
@@ -601,8 +653,9 @@
       const cols = dims?.cols || 80;
       const rows = dims?.rows || 24;
 
+      const shellToUse = appState.terminalSettings.shell.trim() || undefined;
       try {
-        await spawnPty(sessionId, sessionCwd || undefined, undefined, cols, rows);
+        await spawnPty(sessionId, sessionCwd || undefined, shellToUse, cols, rows);
         st.spawned = true;
       } catch (err: any) {
         term.write(`\r\n\x1b[31m[AgentDeck] Failed to spawn PTY: ${err?.message || err}\x1b[0m\r\n`);
@@ -719,6 +772,9 @@
           st.term.dispose();
           st.wrapper.remove();
           terminalMap.delete(id);
+          sessionInputBuffers.delete(id);
+          sessionOutputBuffers.delete(id);
+          lastDetectedPromptMap.delete(id);
         }
       }
     }
@@ -832,6 +888,40 @@
               appState.setSessionAgent(payload.session_id, false, 'shell');
             }
           }
+
+          // 3. Robust heuristic: Detect interactive prompt / option selection in PTY output stream
+          const currentBuf = sessionOutputBuffers.get(payload.session_id) || '';
+          const newBuf = (currentBuf + payload.data).slice(-2048);
+          sessionOutputBuffers.set(payload.session_id, newBuf);
+
+          const detected = detectInteractivePrompt(newBuf);
+          if (detected) {
+            const now = Date.now();
+            const lastTime = lastDetectedPromptMap.get(payload.session_id) || 0;
+            // Debounce within 4 seconds per session to prevent alert spam
+            if (now - lastTime > 4000) {
+              lastDetectedPromptMap.set(payload.session_id, now);
+
+              const agentName = (s && s.isAgent && s.agentKind !== 'shell') ? s.agentKind : 'agent';
+              if (s && !s.isAgent) {
+                appState.setSessionAgent(
+                  payload.session_id,
+                  true,
+                  'custom',
+                  s.title.startsWith('Terminal') ? 'AI Agent' : undefined
+                );
+              }
+
+              appState.handleAgentEvent({
+                type: detected.type,
+                agent: agentName,
+                sessionId: payload.session_id,
+                cwd: s?.cwd,
+                message: detected.message,
+                timestamp: now,
+              });
+            }
+          }
         }
       }
     );
@@ -877,8 +967,9 @@
         {@const isSecondary = appState.terminalLayout !== 'single' && session.id === appState.secondarySessionId}
         {@const isFocused = (isPrimary && appState.focusedPane === 'primary') || (isSecondary && appState.focusedPane === 'secondary') || (appState.terminalLayout === 'single' && isPrimary)}
         {@const isEditing = editingSessionId === session.id}
+        {@const hasAttention = Boolean(session.attentionState)}
         <div
-          class="shrink-0 group relative flex items-center space-x-1.5 px-2.5 py-1 text-xs rounded-md font-mono transition cursor-pointer {isFocused ? 'bg-white dark:bg-deck-bg text-slate-900 dark:text-deck-bright shadow-xs font-semibold ring-1 ring-blue-500/40' : isPrimary ? 'bg-slate-100/80 dark:bg-deck-card/60 text-slate-800 dark:text-deck-text' : isSecondary ? 'bg-purple-50/80 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 dark:text-deck-muted dark:hover:text-deck-bright dark:hover:bg-deck-card/40'}"
+          class="shrink-0 group relative flex items-center space-x-1.5 px-2.5 py-1 text-xs rounded-md font-mono transition cursor-pointer {hasAttention ? 'ring-2 ring-amber-500 bg-amber-50/90 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 animate-pulse shadow-xs font-semibold' : isFocused ? 'bg-white dark:bg-deck-bg text-slate-900 dark:text-deck-bright shadow-xs font-semibold ring-1 ring-blue-500/40' : isPrimary ? 'bg-slate-100/80 dark:bg-deck-card/60 text-slate-800 dark:text-deck-text' : isSecondary ? 'bg-purple-50/80 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 dark:text-deck-muted dark:hover:text-deck-bright dark:hover:bg-deck-card/40'}"
           onclick={() => {
             appState.setActiveSession(session.id);
             focusTerminal(session.id);
@@ -907,6 +998,17 @@
           {#if idx < 9}
             <span class="text-[9px] font-mono text-slate-400 dark:text-deck-muted/70 px-1 py-0.2 rounded bg-slate-200/50 dark:bg-deck-card" title="Switch tab (Alt+{idx + 1})">
               {idx + 1}
+            </span>
+          {/if}
+
+          <!-- Attention Badge if Input or Permission Required -->
+          {#if hasAttention}
+            <span
+              class="flex items-center space-x-0.5 px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[9px] font-bold shadow-xs animate-bounce"
+              title={session.attentionMessage || (session.attentionState === 'permission_required' ? 'Permission Required' : 'Input Required')}
+            >
+              <AlertCircle class="w-2.5 h-2.5 shrink-0" />
+              <span>{session.attentionState === 'permission_required' ? 'Permission' : 'Input'}</span>
             </span>
           {/if}
 
@@ -1014,33 +1116,126 @@
         </button>
       </div>
 
-      <!-- Quick Launch Select Box -->
+      <!-- Quick Launch Custom Dropdown -->
       <div class="relative flex items-center">
-        <Zap class="w-3 h-3 text-amber-500 absolute left-2 pointer-events-none" />
-        <select
-          bind:value={selectedQuickAction}
-          onchange={onSelectQuickAction}
-          class="bg-gray-50 dark:bg-deck-card/70 hover:bg-gray-100 dark:hover:bg-deck-border/80 border border-deck-border/50 rounded-md pl-6 pr-2 py-1 text-xs text-slate-900 dark:text-deck-bright font-mono focus:outline-none focus:border-blue-500 cursor-pointer shadow-xs transition appearance-auto"
+        <button
+          type="button"
+          onclick={() => (isQuickLaunchOpen = !isQuickLaunchOpen)}
+          class="flex items-center space-x-1.5 px-2.5 py-1 bg-gray-50 dark:bg-deck-card/70 hover:bg-gray-100 dark:hover:bg-deck-border/80 border border-deck-border/50 rounded-md text-xs text-slate-900 dark:text-deck-bright font-mono transition cursor-pointer shadow-xs"
+          title="Quick Launch Coding Agents and Utilities"
         >
-          <option value="" disabled selected>⚡ Quick Launch</option>
-          <optgroup label="🤖 AI Coding Agents">
-            <option value="agy">Antigravity (AGY)</option>
-            <option value="opencode">OpenCode</option>
-            <option value="claude">Claude Code</option>
-            <option value="aider">Aider AI</option>
-            <option value="gemini">Gemini CLI</option>
-            <option value="goose">Goose Agent</option>
-          </optgroup>
-          <optgroup label="🛠️ Git & Shell">
-            <option value="git_status">git status</option>
-            <option value="git_diff">git diff</option>
-            <option value="clear">clear terminal</option>
-          </optgroup>
-          <optgroup label="⚙️ Agent Session Status">
-            <option value="reset_shell">Reset Tab to Standard Shell</option>
-            <option value="toggle_agent">Toggle AI Agent Mark</option>
-          </optgroup>
-        </select>
+          <Zap class="w-3 h-3 text-amber-500 shrink-0" />
+          <span>Quick Launch</span>
+          <ChevronDown class="w-3 h-3 text-slate-400 shrink-0 ml-0.5" />
+        </button>
+
+        {#if isQuickLaunchOpen}
+          <!-- Transparent backdrop to dismiss on outside click -->
+          <div
+            class="fixed inset-0 z-40"
+            onclick={() => (isQuickLaunchOpen = false)}
+          ></div>
+
+          <div class="absolute top-full right-0 mt-1 w-56 bg-white dark:bg-deck-surface border border-deck-border rounded-lg shadow-xl z-50 py-1 font-sans text-xs animate-in fade-in zoom-in-95 duration-100">
+            <!-- AI Coding Agents -->
+            <div class="px-2.5 py-1 text-[10px] font-semibold text-slate-400 dark:text-deck-muted uppercase tracking-wider border-b border-deck-border/50">
+              🤖 AI Coding Agents
+            </div>
+            <button
+              type="button"
+              onclick={() => executeQuickAction('agy')}
+              class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card flex items-center space-x-2 text-slate-700 dark:text-deck-text cursor-pointer transition"
+            >
+              <span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
+              <span class="font-mono">Antigravity (AGY)</span>
+            </button>
+            <button
+              type="button"
+              onclick={() => executeQuickAction('claude')}
+              class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card flex items-center space-x-2 text-slate-700 dark:text-deck-text cursor-pointer transition"
+            >
+              <span class="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+              <span class="font-mono">Claude Code</span>
+            </button>
+            <button
+              type="button"
+              onclick={() => executeQuickAction('opencode')}
+              class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card flex items-center space-x-2 text-slate-700 dark:text-deck-text cursor-pointer transition"
+            >
+              <span class="w-2 h-2 rounded-full bg-purple-500 shrink-0"></span>
+              <span class="font-mono">OpenCode</span>
+            </button>
+            <button
+              type="button"
+              onclick={() => executeQuickAction('aider')}
+              class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card flex items-center space-x-2 text-slate-700 dark:text-deck-text cursor-pointer transition"
+            >
+              <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+              <span class="font-mono">Aider AI</span>
+            </button>
+            <button
+              type="button"
+              onclick={() => executeQuickAction('gemini')}
+              class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card flex items-center space-x-2 text-slate-700 dark:text-deck-text cursor-pointer transition"
+            >
+              <span class="w-2 h-2 rounded-full bg-indigo-500 shrink-0"></span>
+              <span class="font-mono">Gemini CLI</span>
+            </button>
+            <button
+              type="button"
+              onclick={() => executeQuickAction('goose')}
+              class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card flex items-center space-x-2 text-slate-700 dark:text-deck-text cursor-pointer transition"
+            >
+              <span class="w-2 h-2 rounded-full bg-orange-500 shrink-0"></span>
+              <span class="font-mono">Goose Agent</span>
+            </button>
+
+            <!-- Git & Shell -->
+            <div class="px-2.5 py-1 text-[10px] font-semibold text-slate-400 dark:text-deck-muted uppercase tracking-wider border-y border-deck-border/50 mt-1">
+              🛠️ Git & Shell
+            </div>
+            <button
+              type="button"
+              onclick={() => executeQuickAction('git_status')}
+              class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card text-slate-700 dark:text-deck-text font-mono cursor-pointer transition"
+            >
+              git status
+            </button>
+            <button
+              type="button"
+              onclick={() => executeQuickAction('git_diff')}
+              class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card text-slate-700 dark:text-deck-text font-mono cursor-pointer transition"
+            >
+              git diff
+            </button>
+            <button
+              type="button"
+              onclick={() => executeQuickAction('clear')}
+              class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card text-slate-700 dark:text-deck-text font-mono cursor-pointer transition"
+            >
+              clear terminal
+            </button>
+
+            <!-- Session Status -->
+            <div class="px-2.5 py-1 text-[10px] font-semibold text-slate-400 dark:text-deck-muted uppercase tracking-wider border-y border-deck-border/50 mt-1">
+              ⚙️ Session Status
+            </div>
+            <button
+              type="button"
+              onclick={() => executeQuickAction('reset_shell')}
+              class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card text-slate-700 dark:text-deck-text cursor-pointer transition text-xs"
+            >
+              Reset Tab to Shell
+            </button>
+            <button
+              type="button"
+              onclick={() => executeQuickAction('toggle_agent')}
+              class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card text-slate-700 dark:text-deck-text cursor-pointer transition text-xs"
+            >
+              Toggle AI Agent Mark
+            </button>
+          </div>
+        {/if}
       </div>
     </div>
   </div>
@@ -1090,15 +1285,44 @@
             {/if}
 
             <!-- Session Selector Dropdown -->
-            <select
-              value={appState.activeSessionId}
-              onchange={(e) => appState.setPrimarySession(e.currentTarget.value)}
-              class="bg-white/80 dark:bg-deck-bg/80 border border-deck-border/40 rounded px-1.5 py-0.5 text-[11px] font-mono text-slate-800 dark:text-deck-bright focus:outline-none max-w-[140px] truncate cursor-pointer shadow-2xs"
-            >
-              {#each appState.sessions as s}
-                <option value={s.id}>{s.title}</option>
-              {/each}
-            </select>
+            <div class="relative">
+              <button
+                type="button"
+                onclick={() => (isPane1SessionDropdownOpen = !isPane1SessionDropdownOpen)}
+                class="flex items-center space-x-1 bg-white/80 dark:bg-deck-bg/80 hover:bg-gray-100 dark:hover:bg-deck-card border border-deck-border/40 rounded px-1.5 py-0.5 text-[11px] font-mono text-slate-800 dark:text-deck-bright cursor-pointer shadow-2xs max-w-[150px]"
+                title="Switch session in Pane 1"
+              >
+                <span class="truncate">{pane1Session?.title || 'Select Session'}</span>
+                <ChevronDown class="w-3 h-3 text-slate-400 shrink-0 ml-0.5" />
+              </button>
+
+              {#if isPane1SessionDropdownOpen}
+                <div
+                  class="fixed inset-0 z-40"
+                  onclick={() => (isPane1SessionDropdownOpen = false)}
+                ></div>
+
+                <div class="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-deck-surface border border-deck-border rounded-lg shadow-xl z-50 py-1 font-sans text-xs animate-in fade-in zoom-in-95 duration-100">
+                  <div class="max-h-48 overflow-y-auto py-0.5">
+                    {#each appState.sessions as s}
+                      <button
+                        type="button"
+                        onclick={() => {
+                          appState.setPrimarySession(s.id);
+                          isPane1SessionDropdownOpen = false;
+                        }}
+                        class="w-full flex items-center justify-between px-2.5 py-1 text-left hover:bg-slate-100 dark:hover:bg-deck-card cursor-pointer transition {s.id === appState.activeSessionId ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-semibold' : 'text-slate-700 dark:text-deck-text'}"
+                      >
+                        <span class="font-mono truncate">{s.isAgent ? '🤖 ' : '💻 '}{s.title}</span>
+                        {#if s.id === appState.activeSessionId}
+                          <Check class="w-3.5 h-3.5 text-blue-500 shrink-0 ml-1.5" />
+                        {/if}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </div>
           </div>
 
           <!-- Pane 1 Action Controls -->
@@ -1193,15 +1417,44 @@
             {/if}
 
             <!-- Session Selector Dropdown -->
-            <select
-              value={appState.secondarySessionId || ''}
-              onchange={(e) => appState.setSecondarySession(e.currentTarget.value)}
-              class="bg-white/80 dark:bg-deck-bg/80 border border-deck-border/40 rounded px-1.5 py-0.5 text-[11px] font-mono text-slate-800 dark:text-deck-bright focus:outline-none max-w-[140px] truncate cursor-pointer shadow-2xs"
-            >
-              {#each appState.sessions as s}
-                <option value={s.id}>{s.title}</option>
-              {/each}
-            </select>
+            <div class="relative">
+              <button
+                type="button"
+                onclick={() => (isPane2SessionDropdownOpen = !isPane2SessionDropdownOpen)}
+                class="flex items-center space-x-1 bg-white/80 dark:bg-deck-bg/80 hover:bg-gray-100 dark:hover:bg-deck-card border border-deck-border/40 rounded px-1.5 py-0.5 text-[11px] font-mono text-slate-800 dark:text-deck-bright cursor-pointer shadow-2xs max-w-[150px]"
+                title="Switch session in Pane 2"
+              >
+                <span class="truncate">{pane2Session?.title || 'Select Session'}</span>
+                <ChevronDown class="w-3 h-3 text-slate-400 shrink-0 ml-0.5" />
+              </button>
+
+              {#if isPane2SessionDropdownOpen}
+                <div
+                  class="fixed inset-0 z-40"
+                  onclick={() => (isPane2SessionDropdownOpen = false)}
+                ></div>
+
+                <div class="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-deck-surface border border-deck-border rounded-lg shadow-xl z-50 py-1 font-sans text-xs animate-in fade-in zoom-in-95 duration-100">
+                  <div class="max-h-48 overflow-y-auto py-0.5">
+                    {#each appState.sessions as s}
+                      <button
+                        type="button"
+                        onclick={() => {
+                          appState.setSecondarySession(s.id);
+                          isPane2SessionDropdownOpen = false;
+                        }}
+                        class="w-full flex items-center justify-between px-2.5 py-1 text-left hover:bg-slate-100 dark:hover:bg-deck-card cursor-pointer transition {s.id === appState.secondarySessionId ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 font-semibold' : 'text-slate-700 dark:text-deck-text'}"
+                      >
+                        <span class="font-mono truncate">{s.isAgent ? '🤖 ' : '💻 '}{s.title}</span>
+                        {#if s.id === appState.secondarySessionId}
+                          <Check class="w-3.5 h-3.5 text-purple-500 shrink-0 ml-1.5" />
+                        {/if}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </div>
           </div>
 
           <!-- Pane 2 Action Controls -->

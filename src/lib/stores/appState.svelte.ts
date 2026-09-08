@@ -9,8 +9,20 @@ import type {
   TerminalLayout,
   PromptTemplate,
   BranchInfo,
-  StashInfo
+  StashInfo,
+  AgentEvent,
+  AgentEventType,
+  AgentIntegrationInfo,
+  TerminalSettings,
+  UIComponentContext,
+  CanvasTab
 } from '$lib/types';
+import { 
+  formatComponentSteerPrompt, 
+  encodeBracketedPaste, 
+  normalizePreviewUrl,
+  resolveSteerTargetSession
+} from '$lib/utils/webviewSteer';
 import {
   openRepository,
   unwatchRepository,
@@ -41,9 +53,14 @@ import {
   listDirectoryFolders,
   createDirectory as apiCreateDirectory,
   initRepository as apiInitRepository,
-  listenEvent
+  listenEvent,
+  showDesktopNotification,
+  getAgentIntegrations as apiGetIntegrations,
+  installAgentIntegration as apiInstallIntegration,
+  uninstallAgentIntegration as apiUninstallIntegration
 } from '$lib/utils/tauri';
 import { resolveNextFileSelection } from '$lib/utils/fileSelection';
+import { notificationManager } from '$lib/utils/notifications';
 
 const DIFF_VIEW_MODE_KEY = 'agentdeck_diff_view_mode';
 const DIFF_WRAP_LINES_KEY = 'agentdeck_diff_wrap_lines';
@@ -54,6 +71,7 @@ const PROJECTS_STORAGE_KEY = 'agentdeck_v2_projects';
 const ACTIVE_PROJECT_KEY = 'agentdeck_v2_active_project_id';
 const TEMPLATES_STORAGE_KEY = 'agentdeck_v2_templates';
 const LLM_SETTINGS_KEY = 'agentdeck_v2_llm_settings';
+const TERMINAL_SETTINGS_KEY = 'agentdeck_v2_terminal_settings';
 const TERMINAL_SPLIT_KEY = 'agentdeck_terminal_split';
 const SIDEBAR_MODE_KEY = 'agentdeck_sidebar_mode';
 
@@ -273,6 +291,34 @@ function loadStoredLlmSettings(): LlmSettings {
   return defaultSettings;
 }
 
+export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
+  shell: '',
+  fontFamily: 'JetBrains Mono, Menlo, Monaco, "Courier New", monospace',
+  fontSize: 13,
+  lineHeight: 1.25,
+  letterSpacing: 0,
+  fontWeight: '400',
+  fontWeightBold: '700',
+  cursorStyle: 'bar',
+  cursorBlink: true,
+  scrollback: 10000,
+  fastScrollSensitivity: 5,
+  drawBoldTextInBrightColors: true,
+  nerdFont: true,
+};
+
+function loadStoredTerminalSettings(): TerminalSettings {
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(TERMINAL_SETTINGS_KEY);
+      if (raw) {
+        return { ...DEFAULT_TERMINAL_SETTINGS, ...JSON.parse(raw) };
+      }
+    } catch {}
+  }
+  return { ...DEFAULT_TERMINAL_SETTINGS };
+}
+
 class AppState {
   // 1. Multi-Project Deck State
   projects = $state<ProjectItem[]>([]);
@@ -331,13 +377,24 @@ class AppState {
   discardModalOpen = $state<boolean>(false);
   discardTarget = $state<{ path: string; hunkIndex?: number; isHunk: boolean } | null>(null);
 
-  // Settings Modal & LLM Settings
-  settingsModalOpen = $state<boolean>(false);
-  settingsModalTab = $state<'appearance' | 'templates' | 'llm' | 'shortcuts' | 'about'>('appearance');
-  llmSettings = $state<LlmSettings>(loadStoredLlmSettings());
+  // Webview Preview & Direct Component Steering
+  activeCanvasTab = $state<CanvasTab>('diff');
+  webPreviewUrl = $state<string>('http://localhost:5173');
+  isInspectMode = $state<boolean>(false);
+  selectedComponent = $state<UIComponentContext | null>(null);
+  directSteerInput = $state<string>('');
+  webviewSteerTargetSessionId = $state<string | null>(null);
 
-  openSettings(tab: 'appearance' | 'templates' | 'llm' | 'shortcuts' | 'about' = 'appearance') {
-    this.settingsModalTab = tab;
+  // Settings Modal & LLM / Terminal Settings
+  settingsModalOpen = $state<boolean>(false);
+  settingsModalTab = $state<'appearance' | 'terminal' | 'templates' | 'llm' | 'integrations' | 'shortcuts' | 'about'>('appearance');
+  llmSettings = $state<LlmSettings>(loadStoredLlmSettings());
+  terminalSettings = $state<TerminalSettings>(loadStoredTerminalSettings());
+
+  openSettings(tab?: 'appearance' | 'terminal' | 'templates' | 'llm' | 'integrations' | 'shortcuts' | 'about') {
+    if (tab) {
+      this.settingsModalTab = tab;
+    }
     this.settingsModalOpen = true;
   }
 
@@ -394,8 +451,14 @@ class AppState {
 
   // Toast notifications
   toastMessage = $state<string | null>(null);
-  toastType = $state<'success' | 'info' | 'error' | 'loading'>('info');
+  toastType = $state<'success' | 'info' | 'error' | 'loading' | 'attention'>('info');
+  toastActionText = $state<string | null>(null);
+  toastActionCallback: (() => void) | null = null;
   private toastTimer: any = null;
+
+  // Agent Integrations
+  agentIntegrations = $state<AgentIntegrationInfo[]>([]);
+  isLoadingIntegrations = $state<boolean>(false);
 
   constructor() {}
 
@@ -585,6 +648,20 @@ class AppState {
     return this.activeSessionId;
   }
 
+  get hasAttentionAlert(): boolean {
+    return this.allSessions.some((s) => Boolean(s.attentionState));
+  }
+
+  get attentionSessions(): PtySession[] {
+    return this.allSessions.filter((s) => Boolean(s.attentionState));
+  }
+
+  isProjectAttentionRequired(projectId: string): boolean {
+    const p = this.projects.find((proj) => proj.id === projectId);
+    if (!p) return false;
+    return p.sessions.some((s) => Boolean(s.attentionState));
+  }
+
   get activeSession(): PtySession | undefined {
     return this.sessions.find((s) => s.id === this.activeSessionId);
   }
@@ -671,13 +748,23 @@ class AppState {
   // -------------------------------------------------------------
   // Toast Notifications
   // -------------------------------------------------------------
-  showToast(message: string, type: 'success' | 'info' | 'error' | 'loading' = 'info', duration = 3500) {
+  showToast(
+    message: string,
+    type: 'success' | 'info' | 'error' | 'loading' | 'attention' = 'info',
+    duration = 3500,
+    actionText?: string,
+    actionCallback?: () => void
+  ) {
     this.toastMessage = message;
     this.toastType = type;
+    this.toastActionText = actionText || null;
+    this.toastActionCallback = actionCallback || null;
     if (this.toastTimer) clearTimeout(this.toastTimer);
     if (duration > 0) {
       this.toastTimer = setTimeout(() => {
         this.toastMessage = null;
+        this.toastActionText = null;
+        this.toastActionCallback = null;
       }, duration);
     }
   }
@@ -685,6 +772,8 @@ class AppState {
   hideToast() {
     if (this.toastTimer) clearTimeout(this.toastTimer);
     this.toastMessage = null;
+    this.toastActionText = null;
+    this.toastActionCallback = null;
   }
 
   ensureStandaloneSessions() {
@@ -765,6 +854,16 @@ class AppState {
         this.handleRepoChangedEvent(payload.repo_path);
       }
     });
+
+    // 4. Global listener for incoming agent input / permission notifications
+    listenEvent<AgentEvent>('agent-event', (event) => {
+      if (event) {
+        this.handleAgentEvent(event);
+      }
+    });
+
+    // 5. Query detected agent integrations
+    this.loadAgentIntegrations();
   }
 
   private handleRepoChangedEvent(repoPath: string) {
@@ -1749,7 +1848,197 @@ class AppState {
     }
   }
 
+  // -------------------------------------------------------------
+  // Agent Attention & Input / Permission Notification Management
+  // -------------------------------------------------------------
+  setSessionAttention(id: string, attentionState: AgentEventType | null, message?: string | null) {
+    const s = this.allSessions.find((session) => session.id === id);
+    if (!s) return;
+
+    s.attentionState = attentionState;
+    s.attentionMessage = message || null;
+
+    const proj = this.projects.find((p) => p.sessions.some((sess) => sess.id === id));
+    if (proj) {
+      proj.sessions = [...proj.sessions];
+    } else {
+      this.standaloneSessions = [...this.standaloneSessions];
+    }
+  }
+
+  clearSessionAttention(id: string) {
+    const s = this.allSessions.find((session) => session.id === id);
+    if (s && s.attentionState) {
+      s.attentionState = null;
+      s.attentionMessage = null;
+      const proj = this.projects.find((p) => p.sessions.some((sess) => sess.id === id));
+      if (proj) {
+        proj.sessions = [...proj.sessions];
+      } else {
+        this.standaloneSessions = [...this.standaloneSessions];
+      }
+    }
+  }
+
+  navigateToSession(projectId?: string, sessionId?: string) {
+    if (projectId && projectId !== this.activeProjectId) {
+      this.switchProject(projectId);
+    }
+    if (sessionId) {
+      this.setActiveSession(sessionId);
+      this.clearSessionAttention(sessionId);
+    }
+    this.setWorkspaceView('terminal');
+    setTimeout(() => this.focusActiveTerminal(), 50);
+  }
+
+  async handleAgentEvent(rawEvent: any) {
+    if (!rawEvent) return;
+    const event: AgentEvent = (rawEvent.data && (rawEvent.data.type || rawEvent.data.event_type))
+      ? rawEvent.data
+      : rawEvent;
+
+    if (rawEvent.event_type && !event.type) {
+      (event as any).type = rawEvent.event_type;
+    }
+
+    if (!event || !event.type) return;
+
+    if (!event.sessionId && (rawEvent.session_id || rawEvent.data?.session_id)) {
+      event.sessionId = rawEvent.session_id || rawEvent.data?.session_id;
+    }
+
+    // 1. Deduplication check
+    if (notificationManager.isDuplicate(event)) {
+      return;
+    }
+
+    // 2. Resolve target project & session
+    const target = notificationManager.resolveSessionTarget(
+      event,
+      this.projects,
+      this.standaloneSessions,
+      this.activeProjectId,
+      this.focusedSessionId
+    );
+
+    if (target.sessionId) {
+      // Automatically mark session as agent if not already
+      const sess = this.allSessions.find((s) => s.id === target.sessionId);
+      if (sess && !sess.isAgent) {
+        this.setSessionAgent(target.sessionId, true, (event.agent as AgentKind) || 'claude');
+      }
+
+      // If idle, clear attention; otherwise set attention
+      if (event.type === 'idle') {
+        this.clearSessionAttention(target.sessionId);
+      } else {
+        this.setSessionAttention(target.sessionId, event.type, event.message);
+      }
+    }
+
+    if (event.type === 'idle') {
+      return;
+    }
+
+    // 3. Routing decision based on window focus & session visibility
+    const isAppFocused = notificationManager.isAppFocused();
+    const isTargetVisible =
+      Boolean(target.sessionId) &&
+      target.sessionId === this.focusedSessionId &&
+      (!target.projectId || target.projectId === this.activeProjectId) &&
+      this.showTerminal;
+
+    const agentName = event.agent.charAt(0).toUpperCase() + event.agent.slice(1);
+    const msg = event.message || (event.type === 'permission_required' ? 'Permission / approval required' : 'Input required');
+
+    if (!isAppFocused) {
+      // Application is unfocused or minimized -> Fire native desktop notification!
+      await notificationManager.dispatchDesktopNotification(event, target);
+
+      // Also set in-app toast for when the user returns
+      this.showToast(
+        `🤖 ${agentName}: ${msg}`,
+        'attention',
+        6000,
+        'Jump to Terminal',
+        () => this.navigateToSession(target.projectId, target.sessionId)
+      );
+    } else if (!isTargetVisible) {
+      // Application is focused, but user is on another project or tab
+      this.showToast(
+        `🤖 ${agentName} (${target.projectName || 'Terminal'}): ${msg}`,
+        'attention',
+        5000,
+        'View Session',
+        () => this.navigateToSession(target.projectId, target.sessionId)
+      );
+    } else {
+      // Application is focused AND correct terminal is visible
+      this.showToast(
+        `🤖 ${agentName}: ${msg}`,
+        'attention',
+        3000
+      );
+    }
+  }
+
+  async loadAgentIntegrations() {
+    try {
+      this.isLoadingIntegrations = true;
+      this.agentIntegrations = await apiGetIntegrations();
+
+      // Offer 1-click hook configuration if detected agents lack hooks
+      if (typeof localStorage !== 'undefined') {
+        const unconfigured = this.agentIntegrations.filter((i) => i.detected && !i.installed);
+        const dismissed = localStorage.getItem('agentdeck_integrations_prompted');
+        if (unconfigured.length > 0 && !dismissed) {
+          localStorage.setItem('agentdeck_integrations_prompted', 'true');
+          const names = unconfigured.map((i) => i.name).join(', ');
+          setTimeout(() => {
+            this.showToast(
+              `Detected ${names}. Configure background notification hooks?`,
+              'info',
+              8000,
+              'Setup Hooks',
+              () => {
+                this.openSettings('integrations');
+              }
+            );
+          }, 1500);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load agent integrations:', e);
+    } finally {
+      this.isLoadingIntegrations = false;
+    }
+  }
+
+  async installAgentIntegration(agent: string) {
+    try {
+      this.showToast(`Installing ${agent} integration...`, 'loading', 0);
+      const updated = await apiInstallIntegration(agent);
+      await this.loadAgentIntegrations();
+      this.showToast(`Successfully installed ${updated.name} integration`, 'success');
+    } catch (e: any) {
+      this.showToast(`Failed to install integration: ${e?.message || e}`, 'error');
+    }
+  }
+
+  async uninstallAgentIntegration(agent: string) {
+    try {
+      this.showToast(`Uninstalling ${agent} integration...`, 'loading', 0);
+      const updated = await apiUninstallIntegration(agent);
+      await this.loadAgentIntegrations();
+      this.showToast(`Uninstalled ${updated.name} integration`, 'info');
+    } catch (e: any) {
+      this.showToast(`Failed to uninstall integration: ${e?.message || e}`, 'error');
+    }
+  }
+
   setActiveSession(id: string) {
+    this.clearSessionAttention(id);
     if (this.terminalLayout === 'single') {
       this.activeSessionId = id;
       this.focusedPane = 'primary';
@@ -2039,7 +2328,7 @@ class AppState {
     return 'none';
   }
 
-  setWorkspaceView(view: 'terminal' | 'review' | 'split') {
+  setWorkspaceView(view: 'terminal' | 'review' | 'preview' | 'split') {
     if (view === 'split') {
       this.openAllPanels();
     } else if (view === 'terminal') {
@@ -2054,8 +2343,84 @@ class AppState {
       this.showTerminal = false;
       this.showReview = true;
       this.activeSingleTab = 'review';
+      this.activeCanvasTab = 'diff';
       this.savePanelVisibility();
       this.notifyResize();
+    } else if (view === 'preview') {
+      this.layoutMode = 'single';
+      this.showTerminal = false;
+      this.showReview = true;
+      this.activeSingleTab = 'review';
+      this.activeCanvasTab = 'preview';
+      this.savePanelVisibility();
+      this.notifyResize();
+    }
+  }
+
+  setCanvasTab(tab: CanvasTab) {
+    this.activeCanvasTab = tab;
+    if (tab === 'preview') {
+      this.showReview = true;
+    }
+    this.notifyResize();
+  }
+
+  setWebPreviewUrl(url: string) {
+    this.webPreviewUrl = normalizePreviewUrl(url);
+  }
+
+  toggleInspectMode(forceState?: boolean) {
+    this.isInspectMode = forceState !== undefined ? forceState : !this.isInspectMode;
+    if (!this.isInspectMode) {
+      this.selectedComponent = null;
+    }
+  }
+
+  setSelectedComponent(comp: UIComponentContext | null) {
+    this.selectedComponent = comp;
+    if (comp) {
+      this.directSteerInput = '';
+    }
+  }
+
+  setWebviewSteerTarget(sessionId: string | null) {
+    this.webviewSteerTargetSessionId = sessionId;
+  }
+
+  async steerComponentDirectly(instruction: string, targetSessionId?: string) {
+    if (!this.selectedComponent) {
+      this.showToast('No component selected to steer', 'error');
+      return;
+    }
+
+    const destSessionId = resolveSteerTargetSession(
+      this.sessions,
+      this.activeSessionId,
+      targetSessionId,
+      this.webviewSteerTargetSessionId
+    );
+
+    if (!destSessionId) {
+      this.showToast('No active terminal session to steer into', 'error');
+      return;
+    }
+
+    const prompt = formatComponentSteerPrompt(this.selectedComponent, instruction);
+    const payload = encodeBracketedPaste(prompt);
+
+    try {
+      await writePty(destSessionId, payload);
+      const compName = this.selectedComponent.componentName 
+        ? `<${this.selectedComponent.componentName}>` 
+        : 'UI element';
+      const targetSession = this.sessions.find((s) => s.id === destSessionId);
+      const agentTitle = targetSession ? targetSession.title : 'agent';
+      this.showToast(`🎯 Steered ${compName} to ${agentTitle}!`, 'success');
+      this.selectedComponent = null;
+      this.isInspectMode = false;
+      this.directSteerInput = '';
+    } catch (e: any) {
+      this.showToast(`Failed to steer component: ${e?.message || e}`, 'error');
     }
   }
 
@@ -2108,6 +2473,32 @@ class AppState {
         console.warn('Failed to save LLM settings:', e);
       }
     }
+  }
+
+  saveTerminalSettings(settings: Partial<TerminalSettings>) {
+    this.terminalSettings = { ...this.terminalSettings, ...settings };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(TERMINAL_SETTINGS_KEY, JSON.stringify(this.terminalSettings));
+        this.showToast('Terminal settings updated', 'success');
+      } catch (e) {
+        console.warn('Failed to save terminal settings:', e);
+      }
+    }
+    this.notifyResize();
+  }
+
+  resetTerminalSettings() {
+    this.terminalSettings = { ...DEFAULT_TERMINAL_SETTINGS };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem(TERMINAL_SETTINGS_KEY);
+        this.showToast('Terminal settings reset to default', 'info');
+      } catch (e) {
+        console.warn('Failed to reset terminal settings:', e);
+      }
+    }
+    this.notifyResize();
   }
 
   notifyResize() {

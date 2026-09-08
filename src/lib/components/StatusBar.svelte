@@ -7,7 +7,8 @@
     ArrowUp, 
     ArrowDown, 
     Layers, 
-    FolderGit2 
+    FolderGit2,
+    AlertCircle
   } from 'lucide-svelte';
 
   const hasAgents = $derived(appState.agentSessions.length > 0);
@@ -77,8 +78,18 @@
       </div>
     {/if}
 
-    <!-- Active Agent Status -->
-    {#if hasAgents}
+    <!-- Active Agent or Attention Status -->
+    {#if appState.hasAttentionAlert}
+      {@const alertSess = appState.attentionSessions[0]}
+      <button
+        onclick={() => appState.navigateToSession(undefined, alertSess?.id)}
+        class="flex items-center space-x-1 text-amber-600 dark:text-amber-400 shrink-0 font-semibold cursor-pointer animate-bounce"
+        title="Coding Agent needs attention (Click to jump to session)"
+      >
+        <AlertCircle class="w-3 h-3 text-amber-500" />
+        <span class="hidden md:inline">{alertSess?.title || 'Agent'}: Attention Required</span>
+      </button>
+    {:else if hasAgents}
       <div class="flex items-center space-x-1 text-purple-600 dark:text-purple-400 shrink-0 font-medium animate-pulse" title="AI Coding Agent active">
         <Bot class="w-3 h-3" />
         <span class="hidden md:inline">{appState.agentSessions.length} Agent Active</span>
@@ -91,7 +102,13 @@
     <!-- Workspace View Indicator -->
     <div class="hidden sm:flex items-center space-x-1">
       <Layers class="w-2.5 h-2.5" />
-      <span class="capitalize">{appState.workspaceView} view</span>
+      <span class="capitalize">
+        {appState.workspaceView === 'review'
+          ? (appState.activeCanvasTab === 'preview' ? 'Preview' : 'Changes')
+          : appState.workspaceView === 'split'
+            ? `Split (${appState.activeCanvasTab === 'preview' ? 'Preview' : 'Changes'})`
+            : appState.workspaceView} view
+      </span>
     </div>
 
     <!-- Layout Mode -->

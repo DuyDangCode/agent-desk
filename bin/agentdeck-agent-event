@@ -1,0 +1,206 @@
+#!/usr/bin/env node
+
+/**
+ * AgentDeck Agent Event Bridge CLI
+ * 
+ * Invoked by coding agent hooks (e.g. Claude Code Notification / PreToolUse).
+ * Normalizes event data from stdin or CLI arguments and forwards it to the
+ * AgentDeck desktop application via a local HTTP API.
+ * 
+ * Invariants:
+ * - Never block or crash the agent process.
+ * - Always exits with code 0 even if the desktop app is closed or unreachable.
+ * - Fast timeout (<= 600ms).
+ */
+
+import http from 'node:http';
+
+const debug = process.env.AGENTDECK_DEBUG === '1' || process.argv.includes('--debug');
+
+function logDebug(...args) {
+  if (debug) {
+    console.error('[agentdeck-bridge]', ...args);
+  }
+}
+
+// Parse simple CLI arguments (--flag value or --flag)
+function parseArgs(args) {
+  const result = {};
+  for (let i = 2; i < args.length; i++) {
+    const arg = args[i];
+    if (arg.startsWith('--')) {
+      const key = arg.slice(2);
+      if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
+        result[key] = args[i + 1];
+        i++;
+      } else {
+        result[key] = true;
+      }
+    }
+  }
+  return result;
+}
+
+// Read stdin if available (non-blocking for TTY)
+function readStdin() {
+  return new Promise((resolve) => {
+    if (process.stdin.isTTY) {
+      return resolve('');
+    }
+
+    let data = '';
+    const timer = setTimeout(() => {
+      resolve(data);
+    }, 250);
+
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (chunk) => {
+      data += chunk;
+    });
+    process.stdin.on('end', () => {
+      clearTimeout(timer);
+      resolve(data);
+    });
+    process.stdin.on('error', () => {
+      clearTimeout(timer);
+      resolve(data);
+    });
+    process.stdin.resume();
+  });
+}
+
+// Send normalized event to AgentDeck local HTTP server
+function postEvent(port, payload) {
+  return new Promise((resolve) => {
+    const dataString = JSON.stringify(payload);
+    const options = {
+      hostname: '127.0.0.1',
+      port: port,
+      path: '/agent-events',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(dataString),
+      },
+      timeout: 600,
+    };
+
+    const req = http.request(options, (res) => {
+      let body = '';
+      res.on('data', (c) => (body += c));
+      res.on('end', () => {
+        logDebug(`Response: ${res.statusCode} ${body}`);
+        resolve();
+      });
+    });
+
+    req.on('error', (err) => {
+      logDebug(`Request error (app may be closed): ${err.message}`);
+      resolve();
+    });
+
+    req.on('timeout', () => {
+      logDebug('Request timed out');
+      req.destroy();
+      resolve();
+    });
+
+    req.write(dataString);
+    req.end();
+  });
+}
+
+async function main() {
+  const cliArgs = parseArgs(process.argv);
+  const rawStdin = await readStdin();
+
+  let stdinJson = {};
+  if (rawStdin.trim()) {
+    try {
+      stdinJson = JSON.parse(rawStdin.trim());
+      logDebug('Parsed stdin JSON:', stdinJson);
+    } catch (e) {
+      logDebug('Stdin is not JSON, treating as text message');
+      stdinJson = { message: rawStdin.trim() };
+    }
+  }
+
+  // Determine Agent
+  const agent = cliArgs.agent || stdinJson.agent || 'claude';
+
+  // Determine Event Type
+  let eventType = cliArgs.type || stdinJson.type || 'input_required';
+  if (eventType === 'Notification' || eventType === 'notification') {
+    eventType = 'input_required';
+  } else if (eventType === 'PreToolUse' || eventType === 'pre_tool_use' || eventType === 'permission') {
+    eventType = 'permission_required';
+  } else if (eventType === 'Stop' || eventType === 'idle') {
+    eventType = 'idle';
+  }
+
+  // Determine Session ID
+  const sessionId =
+    cliArgs['session-id'] ||
+    cliArgs.sessionId ||
+    stdinJson.session_id ||
+    stdinJson.sessionId ||
+    process.env.AGENTDECK_SESSION_ID ||
+    undefined;
+
+  // Determine Working Directory
+  const cwd =
+    cliArgs.cwd ||
+    stdinJson.cwd ||
+    process.env.AGENTDECK_PROJECT_PATH ||
+    process.cwd();
+
+  // Determine Message
+  let message =
+    cliArgs.message ||
+    stdinJson.message ||
+    stdinJson.prompt ||
+    stdinJson.title ||
+    undefined;
+
+  if (!message) {
+    if (eventType === 'permission_required') {
+      message = `${agent.charAt(0).toUpperCase() + agent.slice(1)} requires tool permission / approval`;
+    } else if (eventType === 'idle') {
+      message = `${agent.charAt(0).toUpperCase() + agent.slice(1)} finished task and is idle`;
+    } else {
+      message = `${agent.charAt(0).toUpperCase() + agent.slice(1)} is waiting for your input`;
+    }
+  }
+
+  const normalizedEvent = {
+    type: eventType,
+    agent: agent,
+    sessionId: sessionId,
+    cwd: cwd,
+    message: message,
+    metadata: stdinJson.metadata || (Object.keys(stdinJson).length > 0 ? stdinJson : undefined),
+    timestamp: Date.now(),
+  };
+
+  logDebug('Normalized Event:', normalizedEvent);
+
+  const port = parseInt(process.env.AGENTDECK_PORT || cliArgs.port || '4020', 10);
+
+  // Send event, ignoring any failures
+  await postEvent(port, normalizedEvent);
+
+  // Output valid hook response for Antigravity / Claude Code lifecycle hooks
+  if (agent === 'antigravity' || eventType === 'permission_required') {
+    process.stdout.write(JSON.stringify({ decision: 'allow' }) + '\n');
+  } else {
+    process.stdout.write('{}\n');
+  }
+
+  // Always exit 0
+  process.exit(0);
+}
+
+main().catch((err) => {
+  logDebug('Unexpected fatal error:', err);
+  process.exit(0);
+});

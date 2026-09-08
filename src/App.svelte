@@ -14,7 +14,8 @@
   import BranchModal from '$lib/components/BranchModal.svelte';
   import SettingsModal from '$lib/components/SettingsModal.svelte';
   import PromptTemplateModal from '$lib/components/PromptTemplateModal.svelte';
-  import { CheckCircle2, AlertCircle, Info, Terminal, GitCompare, Columns, Sparkles, Loader2 } from 'lucide-svelte';
+  import WebviewPane from '$lib/components/WebviewPane.svelte';
+  import { CheckCircle2, AlertCircle, Info, Terminal, GitCompare, Columns, Sparkles, Loader2, Globe } from 'lucide-svelte';
 
   // Resizable split pane width (percentage for left terminal pane)
   let splitPercent = $state(48);
@@ -241,17 +242,25 @@
         </div>
       {/if}
 
-      <!-- Real-Time Diff & Review Canvas (preserved in DOM when hidden) -->
+      <!-- Real-Time Diff & Review / Webview Canvas (preserved in DOM when hidden) -->
       <div
         class="h-full flex overflow-hidden {appState.showReview ? '' : 'hidden'}"
         style={appState.showTerminal && appState.showReview ? `width: ${100 - splitPercent}%;` : 'width: 100%;'}
       >
-        <!-- File Tree / List Sidebar -->
-        <FileList />
+        <!-- Diff & Git Review Canvas -->
+        <div class="h-full w-full flex overflow-hidden {appState.activeCanvasTab === 'diff' ? '' : 'hidden'}">
+          <!-- File Tree / List Sidebar -->
+          <FileList />
 
-        <!-- Active File Diff Viewer -->
-        <div class="flex-1 h-full overflow-hidden">
-          <DiffView />
+          <!-- Active File Diff Viewer -->
+          <div class="flex-1 h-full overflow-hidden">
+            <DiffView />
+          </div>
+        </div>
+
+        <!-- Frontend Webview Preview Canvas -->
+        <div class="h-full w-full flex overflow-hidden {appState.activeCanvasTab === 'preview' ? '' : 'hidden'}">
+          <WebviewPane />
         </div>
       </div>
 
@@ -289,6 +298,14 @@
               </button>
 
               <button
+                onclick={() => appState.setWorkspaceView('preview')}
+                class="px-3 py-1.5 bg-white dark:bg-deck-card hover:bg-slate-100 dark:hover:bg-deck-border text-slate-800 dark:text-deck-text text-xs rounded-lg border border-deck-border font-medium flex items-center space-x-1.5 shadow-xs transition cursor-pointer"
+              >
+                <Globe class="w-3.5 h-3.5 text-blue-500" />
+                <span>Open Preview</span>
+              </button>
+
+              <button
                 onclick={() => appState.setWorkspaceView('split')}
                 class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-lg font-medium flex items-center space-x-1.5 shadow transition cursor-pointer"
               >
@@ -316,18 +333,34 @@
 
   <!-- Toast Notification Overlay -->
   {#if appState.toastMessage}
-    <div class="fixed bottom-9 right-4 z-50 animate-in slide-in-from-bottom-4 duration-200">
-      <div class="flex items-center space-x-2 px-3.5 py-2.5 rounded-lg shadow-xl border text-xs font-medium {appState.toastType === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/90 text-emerald-900 dark:text-emerald-200 border-emerald-300 dark:border-emerald-500/40' : appState.toastType === 'error' ? 'bg-rose-50 dark:bg-rose-950/90 text-rose-900 dark:text-rose-200 border-rose-300 dark:border-rose-500/40' : appState.toastType === 'loading' ? 'bg-blue-50 dark:bg-blue-950/90 text-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-500/40' : 'bg-white dark:bg-deck-card text-slate-900 dark:text-deck-bright border-deck-border'}">
-        {#if appState.toastType === 'success'}
-          <CheckCircle2 class="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-        {:else if appState.toastType === 'error'}
-          <AlertCircle class="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
-        {:else if appState.toastType === 'loading'}
-          <Loader2 class="w-4 h-4 text-blue-600 dark:text-blue-400 animate-spin shrink-0" />
-        {:else}
-          <Info class="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+    <div class="fixed bottom-9 right-4 z-[100] animate-in slide-in-from-bottom-4 duration-200 max-w-md pointer-events-auto">
+      <div class="flex items-center justify-between space-x-3 px-3.5 py-2.5 rounded-lg shadow-xl border text-xs font-medium {appState.toastType === 'attention' ? 'bg-amber-50 dark:bg-amber-950/95 text-amber-900 dark:text-amber-200 border-amber-400 dark:border-amber-500/50 shadow-amber-500/10' : appState.toastType === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/90 text-emerald-900 dark:text-emerald-200 border-emerald-300 dark:border-emerald-500/40' : appState.toastType === 'error' ? 'bg-rose-50 dark:bg-rose-950/90 text-rose-900 dark:text-rose-200 border-rose-300 dark:border-rose-500/40' : appState.toastType === 'loading' ? 'bg-blue-50 dark:bg-blue-950/90 text-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-500/40' : 'bg-white dark:bg-deck-card text-slate-900 dark:text-deck-bright border-deck-border'}">
+        <div class="flex items-center space-x-2 min-w-0">
+          {#if appState.toastType === 'attention'}
+            <AlertCircle class="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 animate-bounce" />
+          {:else if appState.toastType === 'success'}
+            <CheckCircle2 class="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          {:else if appState.toastType === 'error'}
+            <AlertCircle class="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+          {:else if appState.toastType === 'loading'}
+            <Loader2 class="w-4 h-4 text-blue-600 dark:text-blue-400 animate-spin shrink-0" />
+          {:else}
+            <Info class="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+          {/if}
+          <span class="truncate">{appState.toastMessage}</span>
+        </div>
+
+        {#if appState.toastActionText && appState.toastActionCallback}
+          <button
+            onclick={() => {
+              appState.toastActionCallback?.();
+              appState.hideToast();
+            }}
+            class="ml-2 px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white font-semibold text-[11px] shrink-0 shadow-xs transition cursor-pointer"
+          >
+            {appState.toastActionText}
+          </button>
         {/if}
-        <span>{appState.toastMessage}</span>
       </div>
     </div>
   {/if}

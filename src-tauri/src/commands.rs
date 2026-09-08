@@ -315,4 +315,56 @@ pub fn read_file_content(path: String, relative_path: String) -> Result<String, 
     fs::read_to_string(&full_path).map_err(|e| format!("Failed to read file: {}", e))
 }
 
+#[tauri::command]
+pub fn show_desktop_notification(
+    title: String,
+    body: String,
+    urgency: Option<String>,
+) -> Result<(), String> {
+    crate::agent_events::send_desktop_notification(&title, &body, urgency.as_deref())
+}
+
+#[tauri::command]
+pub fn focus_app_window(app: AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_agent_integrations() -> Result<Vec<crate::integrations::AgentIntegrationInfo>, String> {
+    Ok(crate::integrations::IntegrationManager::get_all_integrations())
+}
+
+#[tauri::command]
+pub fn install_agent_integration(agent: String) -> Result<crate::integrations::AgentIntegrationInfo, String> {
+    if agent == "claude" {
+        crate::integrations::IntegrationManager::install_claude_integration()
+    } else if agent == "antigravity" {
+        crate::integrations::IntegrationManager::install_antigravity_integration()
+    } else if agent == "opencode" {
+        crate::integrations::IntegrationManager::install_opencode_integration()
+    } else {
+        Err(format!("Agent '{}' does not support automated hook installation yet", agent))
+    }
+}
+
+#[tauri::command]
+pub fn uninstall_agent_integration(agent: String) -> Result<crate::integrations::AgentIntegrationInfo, String> {
+    if agent == "claude" {
+        crate::integrations::IntegrationManager::uninstall_claude_integration()
+    } else if agent == "antigravity" {
+        crate::integrations::IntegrationManager::uninstall_antigravity_integration()
+    } else if agent == "opencode" {
+        crate::integrations::IntegrationManager::uninstall_opencode_integration()
+    } else {
+        Err(format!("Agent '{}' does not support automated uninstallation", agent))
+    }
+}
+
+
 

@@ -1,4 +1,4 @@
-import type { RepoInfo, RepoDiffData, CommitResult, DirectoryListing, BranchInfo, StashInfo } from '$lib/types';
+import type { RepoInfo, RepoDiffData, CommitResult, DirectoryListing, BranchInfo, StashInfo, AgentIntegrationInfo } from '$lib/types';
 
 const SERVER_BASE = 'http://127.0.0.1:4020';
 const WS_BASE = 'ws://127.0.0.1:4020';
@@ -20,10 +20,11 @@ function getEventsWs(): WebSocket {
       eventsWebSocket = new WebSocket(`${WS_BASE}/ws/events`);
       eventsWebSocket.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
-          if (data.event && eventListeners[data.event]) {
-            for (const listener of eventListeners[data.event]) {
-              listener(data);
+          const raw = JSON.parse(event.data);
+          if (raw.event && eventListeners[raw.event]) {
+            const payload = raw.data !== undefined ? raw.data : raw;
+            for (const listener of eventListeners[raw.event]) {
+              listener(payload);
             }
           }
         } catch (e) {
@@ -81,6 +82,10 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     create_directory: { url: `${SERVER_BASE}/api/fs/create-dir`, method: 'POST' },
     init_repository: { url: `${SERVER_BASE}/api/repo/init`, method: 'POST' },
     read_file_content: { url: `${SERVER_BASE}/api/fs/read-file`, method: 'POST' },
+    show_desktop_notification: { url: `${SERVER_BASE}/api/notifications/desktop`, method: 'POST' },
+    get_agent_integrations: { url: `${SERVER_BASE}/api/integrations`, method: 'GET' },
+    install_agent_integration: { url: `${SERVER_BASE}/api/integrations/install`, method: 'POST' },
+    uninstall_agent_integration: { url: `${SERVER_BASE}/api/integrations/uninstall`, method: 'POST' },
   };
 
   const target = endpointMap[cmd];
@@ -385,3 +390,28 @@ export async function killPty(sessionId: string): Promise<void> {
   }
   return invoke<void>('kill_pty', { session_id: sessionId, sessionId });
 }
+
+export async function showDesktopNotification(title: string, body: string, urgency?: string): Promise<void> {
+  return invoke<void>('show_desktop_notification', { title, body, urgency });
+}
+
+export async function focusAppWindow(): Promise<void> {
+  if (isTauri()) {
+    return invoke<void>('focus_app_window');
+  } else if (typeof window !== 'undefined') {
+    window.focus();
+  }
+}
+
+export async function getAgentIntegrations(): Promise<AgentIntegrationInfo[]> {
+  return invoke<AgentIntegrationInfo[]>('get_agent_integrations');
+}
+
+export async function installAgentIntegration(agent: string): Promise<AgentIntegrationInfo> {
+  return invoke<AgentIntegrationInfo>('install_agent_integration', { agent });
+}
+
+export async function uninstallAgentIntegration(agent: string): Promise<AgentIntegrationInfo> {
+  return invoke<AgentIntegrationInfo>('uninstall_agent_integration', { agent });
+}
+

@@ -13,7 +13,8 @@
     Sun,
     Moon,
     Monitor,
-    Layers
+    Layers,
+    AlertCircle
   } from 'lucide-svelte';
 
   function cycleTheme() {
@@ -101,12 +102,13 @@
       {#each appState.projects as project, idx (project.id)}
         {@const isActive = project.id === appState.activeProjectId}
         {@const hasAgents = project.sessions.some((s) => s.isAgent)}
+        {@const needsAttention = appState.isProjectAttentionRequired(project.id)}
         {@const stagedCount = project.info?.staged_count || 0}
         {@const unstagedCount = project.info?.unstaged_count || 0}
         {@const isDirty = (project.info?.staged_count || 0) + (project.info?.unstaged_count || 0) + (project.info?.untracked_count || 0) > 0}
 
         <div
-          class="group relative flex items-center justify-between px-2.5 py-2 rounded-lg text-xs transition cursor-pointer border {isActive ? 'bg-white dark:bg-deck-bg text-slate-900 dark:text-deck-bright border-blue-500/50 shadow-xs font-medium' : 'text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright hover:bg-slate-200/60 dark:hover:bg-deck-card/70 border-transparent'}"
+          class="group relative flex items-center justify-between px-2.5 py-2 rounded-lg text-xs transition cursor-pointer border {needsAttention ? 'border-amber-500/70 bg-amber-50/50 dark:bg-amber-950/30' : isActive ? 'bg-white dark:bg-deck-bg text-slate-900 dark:text-deck-bright border-blue-500/50 shadow-xs font-medium' : 'text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright hover:bg-slate-200/60 dark:hover:bg-deck-card/70 border-transparent'}"
           onclick={() => handleSelectProject(project.id)}
           role="button"
           tabindex="0"
@@ -121,7 +123,7 @@
 
           <!-- Project Details -->
           <div class="flex items-center space-x-2 min-w-0 flex-1 pr-1.5">
-            <FolderGit2 class="w-3.5 h-3.5 shrink-0 {isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-deck-muted'}" />
+            <FolderGit2 class="w-3.5 h-3.5 shrink-0 {needsAttention ? 'text-amber-500' : isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-deck-muted'}" />
 
             <div class="min-w-0 flex-1">
               <div class="flex items-center space-x-1.5">
@@ -145,7 +147,12 @@
                   </span>
                 {/if}
 
-                {#if hasAgents}
+                {#if needsAttention}
+                  <span class="flex items-center space-x-0.5 text-amber-600 dark:text-amber-400 font-semibold" title="Agent requires user input/permission">
+                    <AlertCircle class="w-2.5 h-2.5 animate-bounce" />
+                    <span>Attention</span>
+                  </span>
+                {:else if hasAgents}
                   <span class="flex items-center space-x-0.5 text-purple-600 dark:text-purple-400 font-semibold" title="AI Agent Running">
                     <Bot class="w-2.5 h-2.5 animate-pulse" />
                     <span>Agent</span>

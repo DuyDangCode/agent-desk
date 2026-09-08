@@ -79,6 +79,19 @@ export interface SteerContext {
   isStaged: boolean;
 }
 
+export interface UIComponentContext {
+  componentName?: string;
+  filePath?: string;
+  lineNumber?: number;
+  selector: string;
+  htmlSnippet: string;
+  textContent?: string;
+  classes?: string;
+  pageUrl: string;
+}
+
+export type CanvasTab = 'diff' | 'preview';
+
 export type AgentKind = 
   | 'antigravity' 
   | 'opencode' 
@@ -89,6 +102,24 @@ export type AgentKind =
   | 'custom' 
   | 'shell';
 
+export type AgentEventType = 
+  | 'input_required'
+  | 'permission_required'
+  | 'attention_required'
+  | 'idle';
+
+export interface AgentEvent {
+  type: AgentEventType;
+  agent: string;
+  sessionId?: string;
+  terminalId?: string;
+  workspaceId?: string;
+  cwd?: string;
+  message?: string;
+  metadata?: Record<string, unknown>;
+  timestamp?: number;
+}
+
 export interface PtySession {
   id: string;
   title: string;
@@ -96,6 +127,18 @@ export interface PtySession {
   active: boolean;
   isAgent: boolean;
   agentKind: AgentKind;
+  attentionState?: AgentEventType | null;
+  attentionMessage?: string | null;
+}
+
+export interface AgentIntegrationInfo {
+  agent: string;
+  name: string;
+  detected: boolean;
+  installed: boolean;
+  configPath?: string;
+  hookCommand?: string;
+  description: string;
 }
 
 export type TerminalLayout = 'single' | 'split-horizontal' | 'split-vertical';
@@ -144,4 +187,20 @@ export interface DirectoryListing {
 
 export type ThemePreference = 'system' | 'black' | 'white' | 'dark' | 'light' | 'onedark' | 'dracula' | 'nord' | 'github-dark';
 export type ResolvedTheme = 'dark' | 'light' | 'onedark' | 'dracula' | 'nord';
+
+export interface TerminalSettings {
+  shell: string;
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+  fontWeight: '300' | '400' | '500' | '600' | '700';
+  fontWeightBold: '500' | '600' | '700' | '800' | '900';
+  cursorStyle: 'bar' | 'block' | 'underline';
+  cursorBlink: boolean;
+  scrollback: number;
+  fastScrollSensitivity: number;
+  drawBoldTextInBrightColors: boolean;
+  nerdFont: boolean;
+}
 

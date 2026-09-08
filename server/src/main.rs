@@ -196,6 +196,12 @@ async fn main() {
         .route("/api/pty/write", post(write_pty_handler))
         .route("/api/pty/resize", post(resize_pty_handler))
         .route("/api/pty/kill", post(kill_pty_handler))
+        .route("/agent-events", post(agent_events_handler))
+        .route("/api/agent-events", post(agent_events_handler))
+        .route("/api/notifications/desktop", post(desktop_notification_handler))
+        .route("/api/integrations", get(get_integrations_handler))
+        .route("/api/integrations/install", post(install_integration_handler))
+        .route("/api/integrations/uninstall", post(uninstall_integration_handler))
         .route("/ws/pty/:session_id", get(pty_ws_handler))
         .route("/ws/events", get(events_ws_handler))
         .layer(
@@ -604,6 +610,13 @@ async fn spawn_pty_handler(
     cmd.env("COLORTERM", "truecolor");
     cmd.env("LANG", "en_US.UTF-8");
     cmd.env("LC_ALL", "en_US.UTF-8");
+    cmd.env("AGENTDECK_SESSION_ID", &req.session_id);
+    cmd.env("AGENTDECK_PORT", "4020");
+    if let Some(ref dir) = req.cwd {
+        if !dir.is_empty() {
+            cmd.env("AGENTDECK_PROJECT_PATH", dir);
+        }
+    }
 
     let _child = pair
         .slave
@@ -785,3 +798,124 @@ async fn handle_events_ws(mut socket: WebSocket, ctx: AppContext) {
         }
     }
 }
+
+#[path = "../../src-tauri/src/integrations/mod.rs"]
+pub mod integrations;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentEventReq {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub agent: String,
+    #[serde(alias = "session_id", skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(alias = "terminal_id", skip_serializing_if = "Option::is_none")]
+    pub terminal_id: Option<String>,
+    #[serde(alias = "workspace_id", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<u64>,
+}
+
+async fn agent_events_handler(
+    State(ctx): State<AppContext>,
+    Json(event): Json<AgentEventReq>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    println!("[AgentDeck Server] Received agent event: {:?} (agent: {}, type: {})", event.session_id, event.agent, event.event_type);
+    let watcher_tx = ctx.watcher_tx.lock();
+    if let Some(ref tx) = *watcher_tx {
+        let payload = serde_json::json!({
+            "event": "agent-event",
+            "data": event,
+        });
+        let _ = tx.send(payload.to_string());
+    }
+    Ok(Json(serde_json::json!({ "status": "ok" })))
+}
+
+#[derive(Debug, Deserialize)]
+struct DesktopNotifReq {
+    title: String,
+    body: String,
+    urgency: Option<String>,
+}
+
+async fn desktop_notification_handler(
+    Json(req): Json<DesktopNotifReq>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    let mut cmd = std::process::Command::new("notify-send");
+    cmd.arg(&req.title).arg(&req.body);
+    cmd.arg("-a").arg("AgentDeck");
+    let urg = req.urgency.as_deref().unwrap_or("normal");
+    cmd.arg("-u").arg(urg);
+    let icon_candidates = [
+        "/home/thanhduy/Projects/agent_deck/src-tauri/icons/128x128.png",
+        "agent-deck",
+        "utilities-terminal",
+    ];
+    for candidate in icon_candidates {
+        if std::path::Path::new(candidate).exists() || !candidate.contains('/') {
+            cmd.arg("-i").arg(candidate);
+            break;
+        }
+    }
+    let _ = cmd.spawn();
+    Ok(Json(serde_json::json!({ "status": "ok" })))
+}
+
+async fn get_integrations_handler() -> Json<Vec<integrations::AgentIntegrationInfo>> {
+    Json(integrations::IntegrationManager::get_all_integrations())
+}
+
+#[derive(Debug, Deserialize)]
+struct IntegrationActionReq {
+    agent: String,
+}
+
+async fn install_integration_handler(
+    Json(req): Json<IntegrationActionReq>,
+) -> Result<Json<integrations::AgentIntegrationInfo>, (axum::http::StatusCode, String)> {
+    if req.agent == "claude" {
+        integrations::IntegrationManager::install_claude_integration()
+            .map(Json)
+            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))
+    } else if req.agent == "antigravity" {
+        integrations::IntegrationManager::install_antigravity_integration()
+            .map(Json)
+            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))
+    } else if req.agent == "opencode" {
+        integrations::IntegrationManager::install_opencode_integration()
+            .map(Json)
+            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))
+    } else {
+        Err((axum::http::StatusCode::BAD_REQUEST, format!("Unsupported agent: {}", req.agent)))
+    }
+}
+
+async fn uninstall_integration_handler(
+    Json(req): Json<IntegrationActionReq>,
+) -> Result<Json<integrations::AgentIntegrationInfo>, (axum::http::StatusCode, String)> {
+    if req.agent == "claude" {
+        integrations::IntegrationManager::uninstall_claude_integration()
+            .map(Json)
+            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))
+    } else if req.agent == "antigravity" {
+        integrations::IntegrationManager::uninstall_antigravity_integration()
+            .map(Json)
+            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))
+    } else if req.agent == "opencode" {
+        integrations::IntegrationManager::uninstall_opencode_integration()
+            .map(Json)
+            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))
+    } else {
+        Err((axum::http::StatusCode::BAD_REQUEST, format!("Unsupported agent: {}", req.agent)))
+    }
+}
+
