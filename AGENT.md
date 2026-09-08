@@ -29,11 +29,11 @@
 │    VERSION 1.0 (MVP)         │      VERSION 2.0            │      VERSION 3.0          │
 │    Core Review Harness       │  Multi-Project & Multi-Agent│  Platform & Extensibility │
 ├──────────────────────────────┼─────────────────────────────┼───────────────────────────┤
-│ • Embedded Native PTY        │ • Horizontal Project Bar    │ • Remote SSH / Docker PTY │
-│ • Multi-Session PTY Deck     │ • Parallel Multi-Project Deck│ • Session Recording/Replay│
+│ • Embedded Native PTY        │ • Horizontal Project Bar    │ • Remote LAN/VPN Access   │
+│ • Multi-Session PTY Deck     │ • Parallel Multi-Project Deck│ • Preview Browser & Steer │
 │ • Real-Time Live Diffs       │ • Intra-Line Token Diffs    │ • Plugin System (WASM)    │
 │ • Multi-Line Drag Steering   │ • Custom Prompt Templates   │ • MCP Protocol & Hooks    │
-│ • File Explorer with Places  │ • AI Commit Message Synth   │ • Team Sharing & Patches  │
+│ • File Explorer with Places  │ • AI Commit Message Synth   │                           │
 │ • Memory Footprint < 50MB    │ • Split Terminal Decks      │                           │
 │                              │ • Memory Footprint < 90MB   │                           │
 └──────────────────────────────┴─────────────────────────────┴───────────────────────────┘
@@ -50,7 +50,7 @@
 * Bi-directional context steering with target agent selection, no-agent safety gating, and bracketed paste stdin streaming.
 * Granular hunk staging/unstaging, hallucination discard, and native `libgit2` commit panel.
 
-### Phase 2: Version 2.0.0 — Multi-Project & Multi-Agent Intelligence *(Target)*
+### Phase 2: Version 2.0.0 — Multi-Project & Multi-Agent Intelligence *(Status: Implemented & Verified)*
 * Spec: [`docs/versions/version-2-multi-agent-power.md`](file:///home/thanhduy/Projects/agent_deck/docs/versions/version-2-multi-agent-power.md)
 * **Horizontal Project Navigation Bar (`ProjectBar.svelte`):** Attach multiple project folders, navigate across projects via sleek top pills, view active branch and dirty status per project, and attach new projects with 1 click.
 * **Parallel Workspace State Isolation:** Dedicated repository metadata, diff tree, and PTY terminal instances per project with project root `cwd`.
@@ -59,12 +59,14 @@
 * Reusable prompt templates (`{{file}}`, `{{lines}}`, `{{code}}`, `{{instructions}}`).
 * Optional local LLM / API integration for automated conventional commit message synthesis.
 * Multi-pane split terminal layout (side-by-side terminal decks).
+* Out-of-band coding agent notification bridge (`/agent-events`, `NotificationManager`, native desktop `notify-send`).
 
-### Phase 3: Version 3.0.0 — Platform & Extensibility *(Future)*
+### Phase 3: Version 3.0.0 — Platform & Extensibility *(Status: Active & Extensible)*
 * Spec: [`docs/versions/version-3-enterprise-ecosystem.md`](file:///home/thanhduy/Projects/agent_deck/docs/versions/version-3-enterprise-ecosystem.md)
-* Remote SSH and Docker container PTY harnesses.
-* Time-travel session recording and replay with interactive scrubbing.
-* Extensible WASM plugin runtime and Model Context Protocol (MCP) server hooks.
+* **Remote LAN/VPN Terminal Access:** The desktop Axum HTTP/WebSocket server streams PTY sessions to any device on the same LAN/VPN via a PWA web frontend (accessible via browser at local IP or QR code scan).
+* **Embedded Preview Browser & UI Component Steering (`WebviewPane.svelte` + `webviewSteer.ts`):** (already implemented)
+* **Extensibility:** Sandboxed WASM/Extism plugin host and Model Context Protocol (MCP) server bridge.
+* **Automated Diagnostic Hooks:** Pre-steer and post-edit linter/test runner integration.
 
 ---
 

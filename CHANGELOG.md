@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Targeted enhancements and architectural milestones planned for [Version 2.0.0](docs/versions/version-2-multi-agent-power.md) and [Version 3.0.0](docs/versions/version-3-enterprise-ecosystem.md).
 
+### 🔔 Coding Agent Input & Permission Notification System (Version 2.0)
+- **Added:** Reliable two-channel notification system detecting when coding agents (Claude Code, OpenCode, Antigravity CLI) require user input, permission/tool approval, or wait idle.
+- **Added:** Standalone CLI Event Bridge (`bin/agentdeck-agent-event`) that normalizes agent hook payloads and securely posts to the local AgentDeck listener over HTTP with zero shell disruption.
+- **Added:** Automatic PTY environment variable injection (`AGENTDECK_SESSION_ID`, `AGENTDECK_PROJECT_PATH`, `AGENTDECK_PORT`) across both Tauri PTY supervisor (`pty/mod.rs`) and standalone server runtime (`server/src/main.rs`).
+- **Added:** Local HTTP `/agent-events` and `/api/agent-events` endpoints with dual runtime parity (embedded Hyper/Tokio in desktop mode, Axum router in server mode).
+- **Added:** Frontend `NotificationManager` (`notifications.ts`) with 5-second sliding window deduplication, deterministic session/project target resolver with path heuristics, and document visibility / window focus detection.
+- **Added:** Native Linux desktop notifications using `notify-send` with urgency levels (`critical` for permissions, `normal` for input) and application focus commands.
+- **Added:** In-app visual attention indicators: pulsing amber ring and bouncing indicator badge on terminal tabs, alert count badge on projects in sidebar & project bar, and clickable attention pill in status bar & header.
+- **Added:** Interactive in-app attention toasts with 1-click **"View Session"** action navigating directly to the waiting agent session.
+- **Added:** Automatic attention clear upon user keyboard interaction (typing) or session switch.
+- **Added:** Agent Integrations settings panel (`SettingsModal.svelte`) with 1-click safe atomic hook installation and uninstallation for **Claude Code** (`~/.claude/settings.json`), **Google Antigravity** (`~/.gemini/config/hooks.json` & `.agents/hooks.json`), and **OpenCode** (`~/.config/opencode/plugins/agentdeck.js`), complete with automatic timestamped backups, first-run auto-setup prompts, and "Send Test Alert" diagnostic triggers.
+- **Added:** Automatic real-time terminal output heuristic in `TerminalView.svelte` that detects interactive confirmation prompts (`[y/n]`, `Do you want to proceed?`, `waiting for input`) across any terminal session as a zero-configuration fallback even without installed hooks.
+
 ### 🗂️ Multi-Project & Workspace Deck (Version 2.0)
 - **Added:** Top Horizontal Project Bar (`ProjectBar.svelte`) supporting multi-folder attachment, project pills with Git branch badges, real-time dirty counters, and active agent badges ([`FR-PROJ-01..08`](docs/user-requirement.md#41-multi-project-management--horizontal-navigation-bar-proj)).
 - **Added:** Parallel Workspace State Isolation (`ProjectItem`) retaining independent PTY instances with project root `cwd`, dedicated Myers diff trees, and selected file views per project.
@@ -70,13 +83,18 @@ Targeted enhancements and architectural milestones planned for [Version 2.0.0](d
 - **Fixed:** Fixed file extension filter chips overflow by enabling flex-wrap layout in `FileList.svelte`.
 - **Fixed:** Resolved project attachment handler in `FolderPickerModal.svelte` to properly map to `attachProject`.
 
-### 🔮 Remote Workspaces, Extensibility & Ecosystem (Target: V3.0)
-- **Added:** Remote SSH PTY protocol bridge (`russh` / `ssh2`) for controlling CLI agents running on remote instances ([`docs/versions/version-3-enterprise-ecosystem.md`](docs/versions/version-3-enterprise-ecosystem.md)).
-- **Added:** Docker container harness (`bollard`) with automatic volume diff mirroring.
-- **Added:** Time-travel session recording engine (Asciinema-compatible binary log) with interactive scrub bar (`TimeTravel.svelte`).
-- **Added:** Sandboxed WebAssembly (WASM / Extism) plugin runtime.
-- **Added:** Native Model Context Protocol (MCP) server bridge allowing connected agents to inspect AgentDeck review state.
-- **Added:** Pre-steer and post-edit automated diagnostic hooks (linters and test runners).
+### 🌐 Embedded Preview Browser & UI Component Steering (Version 3.0 - Implemented)
+- **Added:** Embedded Preview Browser (`WebviewPane.svelte`) featuring responsive viewport presets (Desktop, Tablet 768px, Mobile 375px), URL bar normalization, reload, and external browser link opening.
+- **Added:** Interactive DOM Element Crosshair Inspector (`isInspectMode`, `generateInspectorScript`) injecting lightweight client-side inspector into the preview iframe with element hover highlight bounding boxes, CSS class inspection, and source tag mapping (`data-component`, `data-source-file`, `data-source-line`).
+- **Added:** Direct UI Component Steering (`webviewSteer.ts`) formatting extracted element context, selectors, and developer instructions into structured prompts, injected atomically via bracketed paste (`\x1b[200~` ... `\x1b[201~`) into active agent PTY sessions.
+- **Added:** Automatic terminal log dev server detector (`detectDevServerUrl`) detecting Vite, Next.js, and localhost ports (`5173`, `3000`, `8080`) from CLI stdout streams.
+
+### 🔮 Enterprise Platform & Ecosystem (Version 3.0 - Planned Roadmap)
+Target specifications defined in [`docs/versions/version-3-enterprise-ecosystem.md`](docs/versions/version-3-enterprise-ecosystem.md):
+- **Planned:** Remote LAN/VPN Terminal Access — PWA frontend accessible from any device on the same network via browser (local IP or QR code), connecting to the desktop Axum server's WebSocket PTY streams.
+- **Planned:** Sandboxed WebAssembly (WASM / Extism) plugin runtime.
+- **Planned:** Native Model Context Protocol (MCP) server bridge allowing connected agents to inspect AgentDeck review state.
+- **Planned:** Pre-steer and post-edit automated diagnostic hooks (linters and test runners).
 
 ---
 

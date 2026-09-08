@@ -128,6 +128,17 @@ To act as the **primary harness** for any CLI coding agent: giving developers fu
 * **📁 In-Explorer Directory & Repository Management:** Create new directories and initialize Git repositories (`git init`) directly from the desktop File Explorer (`FolderPickerModal`).
 * **Remote Branch Guard:** Disallow invalid remote branch checkouts, protecting developers from detached states.
 
+### 4.6. Embedded Preview Browser & UI Component Steering (V3)
+* **Embedded Webview Pane (`WebviewPane.svelte`):** Live in-app web preview with responsive viewport presets (Desktop, Tablet, Mobile) and URL bar navigation.
+* **Automatic Dev Server Detection (`detectDevServerUrl`):** Detects Vite, Next.js, and localhost dev servers from active terminal logs.
+* **Interactive DOM Crosshair Inspector (`isInspectMode`):** Injected lightweight inspector highlights DOM elements and extracts HTML snippets, CSS classes, selectors, and source metadata.
+* **Direct UI Component Steering (`webviewSteer.ts`):** Directly injects structured UI review packets into the agent's PTY session via bracketed paste.
+
+### 4.7. Remote LAN/VPN Terminal Access (V3 — Planned)
+* **PWA Remote Terminal:** The desktop application's internal Axum HTTP/WebSocket server (port `4020`) streams live PTY sessions to any device on the same Wi-Fi/LAN/VPN network. The Svelte frontend is packaged as a Progressive Web App (PWA) accessible from phone/tablet browsers via local IP address or QR code scan.
+* **Remote `@xterm/xterm` Canvas:** Renders a full-featured terminal interface on mobile browsers with the same rendering quality as the desktop app, connected to live agent PTY sessions via WebSocket.
+* **Zero-Install Access:** No app installation needed on the remote device — simply open a browser and navigate to the desktop machine's IP address.
+
 ---
 
 ## 5. Technology Stack Specifications

@@ -86,7 +86,13 @@ Rather than delegating software construction entirely to autonomous systems or s
 * **⏳ Real-Time Push & Pull Loading Notification:** Persistent animated spinner toast (`Loader2 animate-spin`) during active `git push` and `git pull` operations, cleanly transitioning to success or error summaries.
 * **Remote Branch Checkout Guard:** Prevents direct checkout of remote branches and guides users to create local tracking branches safely.
 
-### 8. 🪶 Ultra-Low Resource Footprint
+### 8. 🌐 Embedded Preview Browser & Direct Component Steering (V3)
+* **Embedded Webview Pane:** Live in-app web preview (`WebviewPane.svelte`) with responsive viewport presets (Desktop, Tablet, Mobile) and URL navigation.
+* **Auto-Detect Dev Servers:** Scans active terminal output to auto-detect running dev servers (Vite, Next.js, localhost ports like `5173`, `3000`, `8080`).
+* **Visual Element Inspector:** Interactive crosshair tool to hover and inspect DOM elements with CSS classes, selector hierarchy, and source component metadata (`data-component`, `data-source-file`).
+* **Direct UI Steering:** Synthesizes inspected component snippets and human instructions directly into agent terminal sessions via bracketed paste.
+
+### 9. 🪶 Ultra-Low Resource Footprint
 * Idle RAM consumption **< 50MB** (single project) and **< 90MB** (3 parallel projects) with cold startup **< 400ms**—freeing up system resources for local agent inference and compilation.
 
 ---
@@ -166,8 +172,9 @@ npm run tauri build
 ## 🗺️ Product Roadmap
 
 * **[Version 1.0 (MVP)](docs/versions/version-1-mvp.md)** - ✅ Core multi-session harness, real-time live diffs, multi-line drag steering, file explorer, agent identification, hunk staging & commit release gate.
-* **[Version 2.0 (Multi-Project & Multi-Agent Power)](docs/versions/version-2-multi-agent-power.md)** - 📋 Horizontal project navigation bar, parallel multi-project workspaces, intra-line word diffs, prompt template manager, AI commit message synthesis.
-* **[Version 3.0 (Enterprise Ecosystem)](docs/versions/version-3-enterprise-ecosystem.md)** - 🔮 Remote SSH / Docker harnesses, time-travel session recording, WASM plugin system, MCP sidecars.
+* **[Version 2.0 (Multi-Project & Multi-Agent Power)](docs/versions/version-2-multi-agent-power.md)** - ✅ Horizontal project navigation bar, parallel multi-project workspaces, intra-line word diffs, prompt template manager, AI commit message synthesis.
+* **[Version 3.0 (Platform & Extensibility)](docs/versions/version-3-enterprise-ecosystem.md)** - 🚀 Embedded Preview Browser & UI Component Steering, Remote LAN/VPN terminal access (PWA + QR code), WASM plugin system, MCP server bridge.
+
 
 ---
 

@@ -175,7 +175,7 @@ The MVP focuses strictly on **Must-Have (P0)** requirements defined in [docs/use
 | **Intra-Line Word/Character Diffs** | ❌ Deferred | ✅ V2.0 |
 | **Prompt Template Customizer** | ❌ Deferred | ✅ V2.0 |
 | **AI-Generated Commit Messages** | ❌ Deferred | ✅ V2.0 |
-| **Remote / SSH PTY Harness** | ❌ Deferred | ✅ V3.0 |
+| **Remote LAN/VPN Terminal Access** | ❌ Deferred | ✅ V3.0 |
 | **WASM Plugin Runtime & MCP Bridge** | ❌ Deferred | ✅ V3.0 |
 
 ---
