@@ -21,7 +21,7 @@
                                                                      └──────────────────────────┘
 ```
 
-The MVP focuses strictly on **Must-Have (P0)** requirements defined in [docs/user-requirement.md](file:///home/thanhduy/Projects/agent_deck/docs/user-requirement.md), ensuring zero-latency terminal interaction, debounced live diff viewing, 1-click context injection, and native Git commit gating.
+The MVP focuses strictly on **Must-Have (P0)** requirements defined in [docs/user-requirement.md](../user-requirement.md), ensuring zero-latency terminal interaction, debounced live diff viewing, 1-click context injection, and native Git commit gating.
 
 ---
 

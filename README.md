@@ -1,8 +1,10 @@
-# ⚡ AgentDeck
+# 🦅 Kestrel
 
 ### *The Human-Centric Review Harness & Workspace for CLI Coding Agents*
+*(Formerly AgentDeck)*
 
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2.0-blue.svg?logo=tauri)](https://tauri.app/)
+[![Version 3.0.0](https://img.shields.io/badge/Version-3.0.0-purple.svg)](docs/versions/version-3-enterprise-ecosystem.md)
 [![Rust Core](https://img.shields.io/badge/Rust-2021-orange.svg?logo=rust)](https://www.rust-lang.org/)
 [![Svelte 5](https://img.shields.io/badge/Svelte-5%20Runes-ff3e00.svg?logo=svelte)](https://svelte.dev/)
 [![Memory Footprint](https://img.shields.io/badge/RAM-%3C%2050MB-emerald.svg)](https://github.com/agentdeck/agentdeck)
@@ -10,11 +12,11 @@
 
 ---
 
-## 📖 What is AgentDeck?
+## 📖 What is Kestrel?
 
-**AgentDeck** is an open-source, ultra-lightweight desktop workspace engineered to serve as the **control bridge and review harness** for terminal-first AI coding agents (such as Google Antigravity, OpenCode, Claude Code, Aider, Gemini CLI, Goose Agent, and bespoke local LLM runners).
+**Kestrel** is an open-source, ultra-lightweight desktop workspace engineered to serve as the **control bridge and review harness** for terminal-first AI coding agents (such as Google Antigravity, OpenCode, Claude Code, Aider, Gemini CLI, Goose Agent, and bespoke local LLM runners).
 
-Rather than delegating software construction entirely to autonomous systems or struggling with detached terminal diffs, **AgentDeck puts the human reviewer in the pilot seat**. Built with **Tauri v2**, **Rust**, and **Svelte 5**, it pairs a multi-project horizontal navigation deck with a multi-session embedded native pseudo-terminal (PTY) and an interactive, real-time Git differential review canvas.
+Rather than delegating software construction entirely to autonomous systems or struggling with detached terminal diffs, **Kestrel puts the human reviewer in the pilot seat**. Built with **Tauri v2**, **Rust**, and **Svelte 5**, it pairs a multi-project horizontal navigation deck with a multi-session embedded native pseudo-terminal (PTY) and an interactive, real-time Git differential review canvas.
 
 ```
 ┌─────────────────────────┐       ┌──────────────────────────┐       ┌──────────────────────────┐
@@ -86,13 +88,26 @@ Rather than delegating software construction entirely to autonomous systems or s
 * **⏳ Real-Time Push & Pull Loading Notification:** Persistent animated spinner toast (`Loader2 animate-spin`) during active `git push` and `git pull` operations, cleanly transitioning to success or error summaries.
 * **Remote Branch Checkout Guard:** Prevents direct checkout of remote branches and guides users to create local tracking branches safely.
 
-### 8. 🌐 Embedded Preview Browser & Direct Component Steering (V3)
-* **Embedded Webview Pane:** Live in-app web preview (`WebviewPane.svelte`) with responsive viewport presets (Desktop, Tablet, Mobile) and URL navigation.
-* **Auto-Detect Dev Servers:** Scans active terminal output to auto-detect running dev servers (Vite, Next.js, localhost ports like `5173`, `3000`, `8080`).
-* **Visual Element Inspector:** Interactive crosshair tool to hover and inspect DOM elements with CSS classes, selector hierarchy, and source component metadata (`data-component`, `data-source-file`).
-* **Direct UI Steering:** Synthesizes inspected component snippets and human instructions directly into agent terminal sessions via bracketed paste.
+### 8. 🌐 Embedded Preview Browser, Smart Reverse Proxy & UI Component Steering (V3)
+* **Embedded Webview Pane & Separate Native Window:** Live web application preview (`WebviewPane.svelte`) with dual modes: an embedded iframe canvas with responsive viewports (Full Desktop with proportional scale, Tablet 768px, Mobile 375px) or an external, pop-out native Tauri Webview window (`agentdeck-preview`) with full window management controls.
+* **Smart Full Reverse Proxy Gateway:** Built-in transparent reverse proxy engine in the Rust backend on port 4020. Seamlessly forwards HTML, JavaScript modules, CSS, asset chunks, and APIs from local dev servers (Vite, Next.js, Webpack, localhost ports `5173`, `3000`, `8080`).
+* **Dev Server Offline Graceful Fallback:** Automatically detects if the target development server is not yet running or offline, rendering an elegant, live-polling status screen with automatic reconnection.
+* **Visual Element Crosshair Inspector:** Interactive crosshair tool injecting `AGENTDECK_INSPECTOR_JS` into previewed applications. Highlights hovered DOM elements with bounding boxes and extracts HTML snippets, CSS classes, tag names, computed selectors, and source mapping annotations (`data-component`, `data-source-file`, `data-source-line`).
+* **In-Window Steer Modal & Direct Prompt Injection:** Inspect components directly inside the preview and trigger an in-window floating Steer Modal. Formats component metadata and human review instructions into structured prompts, injected atomically into the active agent's PTY stdin via bracketed paste (`\x1b[200~` ... `\x1b[201~`).
+* **Auto-Detect Dev Servers:** Scans active terminal output streams using regex patterns to automatically discover running dev server endpoints.
 
-### 9. 🪶 Ultra-Low Resource Footprint
+### 9. 🔍 Intelligent Kernel Process Inspection & Agent State Machine (V3)
+* **Kernel-Level PTY Process Inspection:** Direct Linux `/proc/<pid>/stat` and task hierarchy inspection (`inspect_foreground_process`) to accurately detect foreground processes, distinguishing active AI agents from shells or utilities (`nvim`, `htop`, `cargo`, `python`).
+* **Configurable TOML Agent Detection Rules:** Modular detection rules defined in `agent-detection/` for **Google Antigravity (`antigravity.toml`)**, **Anthropic Claude Code (`claude.toml`)**, **OpenCode (`opencode.toml`)**, **Aider AI (`aider.toml`)**, **Google Gemini CLI (`gemini.toml`)**, **Cursor (`cursor.toml`)**, and **Codex (`codex.toml`)**.
+* **Global Agent State Machine:** Tracks real-time agent lifecycle transitions (`idle` ➔ `running` ➔ `blocked` ➔ `completed`).
+* **Auditory Attention Chimes & Visual Alerts:** Automatically triggers an alert sound (`playAlertSound`) and pulses attention badges across session tabs, sidebar tree, and status bar when an agent requires human permission or confirmation.
+* **Dynamic Tab Title Renaming:** Intelligently renames terminal session tabs to the active agent or tool name (e.g. "Claude Code", "Antigravity (AGY)", "OpenCode", "Neovim") while strictly respecting user-set custom titles.
+
+### 10. 🗂️ Collapsible Project Sessions Tree & Terminal Customization (V3)
+* **Sidebar Project Sessions Tree:** Integrated project navigation tree displaying attached repositories with collapsible session lists, direct "Add Terminal" buttons per project, and real-time agent state indicators.
+* **Terminal Settings Modal:** Accessible terminal configuration dialog allowing on-the-fly customization of font size, font family, line height, cursor style, and scrollback buffer limit.
+
+### 11. 🪶 Ultra-Low Resource Footprint
 * Idle RAM consumption **< 50MB** (single project) and **< 90MB** (3 parallel projects) with cold startup **< 400ms**—freeing up system resources for local agent inference and compilation.
 
 ---
@@ -131,7 +146,7 @@ npm install
 ```
 
 ### 3. Run in Development Mode
-You can run AgentDeck either as a native Tauri desktop app or via the dual web harness:
+You can run Kestrel either as a native Tauri desktop app or via the dual web harness:
 
 ```bash
 # Option A: Run Native Tauri Desktop App
@@ -173,8 +188,7 @@ npm run tauri build
 
 * **[Version 1.0 (MVP)](docs/versions/version-1-mvp.md)** - ✅ Core multi-session harness, real-time live diffs, multi-line drag steering, file explorer, agent identification, hunk staging & commit release gate.
 * **[Version 2.0 (Multi-Project & Multi-Agent Power)](docs/versions/version-2-multi-agent-power.md)** - ✅ Horizontal project navigation bar, parallel multi-project workspaces, intra-line word diffs, prompt template manager, AI commit message synthesis.
-* **[Version 3.0 (Platform & Extensibility)](docs/versions/version-3-enterprise-ecosystem.md)** - 🚀 Embedded Preview Browser & UI Component Steering, Remote LAN/VPN terminal access (PWA + QR code), WASM plugin system, MCP server bridge.
-
+* **[Version 3.0 (Platform & Extensibility)](docs/versions/version-3-enterprise-ecosystem.md)** - 🚀 Embedded Preview Browser & UI Component Steering (Implemented), Kernel Process Inspection & Agent Detection (Implemented), Remote LAN/VPN terminal access (PWA + QR code), WASM plugin system, MCP server bridge.
 
 ---
 
@@ -182,30 +196,40 @@ npm run tauri build
 
 ```
 agent_deck/
+├── agent-detection/         # Configurable agent detection rules (*.toml)
+│   ├── antigravity.toml     # Google Antigravity (AGY) match rules
+│   ├── claude.toml          # Anthropic Claude Code match rules
+│   ├── codex.toml           # OpenAI Codex CLI match rules
+│   ├── cursor.toml          # Cursor Agent match rules
+│   ├── default.toml         # Generic fallback shell & agent rules
+│   ├── gemini.toml          # Google Gemini CLI match rules
+│   └── opencode.toml        # OpenCode CLI match rules
 ├── src-tauri/               # Tauri v2 Desktop Backend
 │   ├── src/
 │   │   ├── git/             # libgit2 in-process Git operations, Myers fallback diff engine
-│   │   ├── pty/             # portable-pty virtual TTY master/slave supervisor & UTF-8 locales
+│   │   ├── pty/             # portable-pty virtual TTY supervisor & process inspection
 │   │   ├── watcher/         # notify-debouncer-mini kernel filesystem watcher
+│   │   ├── preview.rs       # Smart reverse proxy & dev server inspector injector
 │   │   ├── commands.rs      # Tauri IPC command declarations
 │   │   ├── lib.rs           # Tauri app runner & plugin initialization
 │   │   └── main.rs          # Desktop executable entrypoint
-│   ├── Cargo.toml           # Rust desktop crate dependencies
-│   └── tauri.conf.json      # Tauri v2 window & capability configuration
+│   ├── Cargo.toml           # Rust desktop crate dependencies (v3.0.0)
+│   └── tauri.conf.json      # Tauri v2 window & capability configuration (v3.0.0)
 ├── server/                  # Pure Rust Standalone Server Bridge (REST + WS)
-│   ├── src/main.rs          # Axum 0.7 server with PTY, Git & FS endpoints
-│   └── Cargo.toml           # Server dependencies
+│   ├── src/main.rs          # Axum 0.7 server with PTY, Git, FS, Preview Proxy & Event endpoints
+│   └── Cargo.toml           # Server dependencies (v3.0.0)
 ├── src/                     # Svelte 5 Frontend
 │   ├── lib/
-│   │   ├── components/      # UI components (Header, ProjectBar, TerminalView, FileList, DiffView, MarkdownPreview, SteerModal, CommitPanel, FolderPickerModal)
-│   │   ├── stores/          # Svelte 5 Runes state store (appState.svelte.ts)
+│   │   ├── components/      # UI components (Header, Sidebar, TerminalView, WebviewPane, FileList, DiffView, MarkdownPreview, SteerModal, CommitPanel, FolderPickerModal)
+│   │   ├── stores/          # Svelte 5 Runes state store (appState.svelte.ts, theme.svelte.ts)
 │   │   ├── types/           # TypeScript interfaces & data models
-│   │   └── utils/           # Tauri & Server IPC bridge (tauri.ts), GFM parser (markdown.ts)
+│   │   └── utils/           # IPC bridge (tauri.ts), agent detection (agentDetection.ts), webview steering (webviewSteer.ts)
 │   ├── App.svelte           # Main workspace layout shell & resizable split pane
 │   ├── app.css              # Global styles & Tailwind CSS directives
 │   └── main.ts              # Frontend bootstrap
+├── tests/                   # Automated unit & boundary test suites
 ├── docs/                    # Architectural specs, URD, and version roadmaps
-└── package.json             # Frontend dependencies & scripts
+└── package.json             # Frontend dependencies & scripts (v3.0.0)
 ```
 
 ---

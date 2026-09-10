@@ -1,11 +1,12 @@
 # 🤖 AGENT.MD — OPERATIONAL DIRECTIVE & ROADMAP GUIDE
-### *For AI Agents & Developers Building and Extending AgentDeck*
+### *For AI Agents & Developers Building and Extending Kestrel*
+*(Formerly AgentDeck)*
 
 ---
 
 ## 1. Core Purpose & Architectural Invariants
 
-**AgentDeck** is the human-in-the-loop control harness for terminal-first AI coding agents (Google Antigravity, OpenCode, Claude Code, Aider, Gemini CLI, Goose Agent, Codex, and local runners). When writing code or refactoring AgentDeck, you **MUST** uphold these system invariants at all times:
+**Kestrel** is the human-in-the-loop control harness for terminal-first AI coding agents (Google Antigravity, OpenCode, Claude Code, Aider, Gemini CLI, Goose Agent, Codex, and local runners). When writing code or refactoring Kestrel, you **MUST** uphold these system invariants at all times:
 
 1. **Strict Roadmap Progression:** Always implement features according to their designated milestone in [`docs/versions/roadmap.md`](file:///home/thanhduy/Projects/agent_deck/docs/versions/roadmap.md). Never mix future roadmap items into earlier milestone tasks without explicit requirement alignment.
 2. **Zero-Latency Terminal Isolation:** The terminal cockpit I/O and PTY streaming must **never** be blocked or delayed by Git diff computations, filesystem events, or UI rendering frames.
@@ -63,10 +64,22 @@
 
 ### Phase 3: Version 3.0.0 — Platform & Extensibility *(Status: Active & Extensible)*
 * Spec: [`docs/versions/version-3-enterprise-ecosystem.md`](file:///home/thanhduy/Projects/agent_deck/docs/versions/version-3-enterprise-ecosystem.md)
-* **Remote LAN/VPN Terminal Access:** The desktop Axum HTTP/WebSocket server streams PTY sessions to any device on the same LAN/VPN via a PWA web frontend (accessible via browser at local IP or QR code scan).
-* **Embedded Preview Browser & UI Component Steering (`WebviewPane.svelte` + `webviewSteer.ts`):** (already implemented)
-* **Extensibility:** Sandboxed WASM/Extism plugin host and Model Context Protocol (MCP) server bridge.
-* **Automated Diagnostic Hooks:** Pre-steer and post-edit linter/test runner integration.
+* **Embedded Preview Browser, Smart Reverse Proxy & UI Component Steering (`WebviewPane.svelte`, `preview.rs`, `webviewSteer.ts`):**
+  * Integrated transparent reverse proxy on port 4020 streaming HTML, JS modules, CSS, chunks, and API requests to target dev servers (Vite, Next.js, Webpack).
+  * Dual preview modes: embedded iframe canvas (responsive viewports: Desktop, Tablet, Mobile) and separate pop-out native Tauri Webview window (`agentdeck-preview`) with full window controls.
+  * Injected crosshair DOM inspector with bounding boxes, tag/class extraction, and source mapping annotations (`AGENTDECK_INSPECTOR_JS`).
+  * In-window floating Steer modal & component picker (`/api/component-picked`, `/api/component-steer`) with direct bracketed paste terminal prompt injection (`\x1b[200~`).
+  * Graceful Dev Server Offline fallback screen with live auto-reconnect polling.
+* **Intelligent Kernel Process Inspection & Agent Detection Engine (`agent-detection/`, `pty/mod.rs`, `agentDetection.ts`):**
+  * Linux `/proc/<pid>/stat` and task hierarchy inspection (`inspect_foreground_process`, `match_agent_binary`) detecting running agent and CLI processes in real-time.
+  * Modular, configurable TOML detection rules in `agent-detection/` for Antigravity, Claude Code, Gemini, Cursor, Codex, OpenCode, Aider.
+  * Global Agent State Machine (`idle` ➔ `running` ➔ `blocked` ➔ `completed`) with auditory attention chime alerts (`playAlertSound`).
+  * Dynamic tab title renaming based on foreground process, preserving user custom names.
+* **UI Simplification & Collapsible Project Sessions Tree (`Sidebar.svelte`, `TerminalView.svelte`):**
+  * Hierarchical project sessions tree with per-project session controls, attention pulses, and agent badges.
+  * Terminal settings modal for customizable font size, line height, font family, cursor style, and scrollback.
+* **Remote LAN/VPN Terminal Access:** (Planned) Axum server streaming PTY to remote PWA clients over WebSockets via QR code.
+* **Extensibility:** (Planned) Sandboxed WASM/Extism plugin host and Model Context Protocol (MCP) server bridge.
 
 ---
 
@@ -74,30 +87,40 @@
 
 ```
 agent_deck/
+├── agent-detection/         # Configurable agent detection rules (*.toml)
+│   ├── antigravity.toml     # Google Antigravity (AGY) match rules
+│   ├── claude.toml          # Anthropic Claude Code match rules
+│   ├── codex.toml           # OpenAI Codex CLI match rules
+│   ├── cursor.toml          # Cursor Agent match rules
+│   ├── default.toml         # Generic fallback shell & agent rules
+│   ├── gemini.toml          # Google Gemini CLI match rules
+│   └── opencode.toml        # OpenCode CLI match rules
 ├── src-tauri/               # Tauri v2 Desktop Backend
 │   ├── src/
 │   │   ├── git/mod.rs       # libgit2 tree parsing, Myers fallback hunk diffs, staging & commits
-│   │   ├── pty/mod.rs       # portable-pty virtual TTY master/slave supervisor & UTF-8 locales
+│   │   ├── pty/mod.rs       # portable-pty virtual TTY supervisor & kernel process inspection
 │   │   ├── watcher/mod.rs   # notify-debouncer-mini filesystem watcher
-│   │   ├── commands.rs      # Tauri IPC command wrappers (folder picker, PTY, Git)
+│   │   ├── preview.rs       # Smart reverse proxy & dev server inspector injector
+│   │   ├── commands.rs      # Tauri IPC command wrappers (preview, PTY, Git, window)
 │   │   ├── lib.rs           # Tauri app runner & plugin setup
 │   │   └── main.rs          # Desktop executable entrypoint
-│   ├── Cargo.toml           # Rust desktop crate dependencies
-│   └── tauri.conf.json      # Tauri v2 configuration & window settings
+│   ├── Cargo.toml           # Rust desktop crate dependencies (v3.0.0)
+│   └── tauri.conf.json      # Tauri v2 configuration & window settings (v3.0.0)
 ├── server/                  # Pure Rust Standalone Server Bridge (REST + WS)
-│   ├── src/main.rs          # Axum 0.7 server with PTY, Git & FS endpoints
-│   └── Cargo.toml           # Server dependencies
+│   ├── src/main.rs          # Axum 0.7 server with PTY, Git, FS, Preview & Event endpoints
+│   └── Cargo.toml           # Server dependencies (v3.0.0)
 ├── src/                     # Svelte 5 Frontend
 │   ├── lib/
-│   │   ├── components/      # UI components (Header, ProjectBar, TerminalView, FileList, DiffView, SteerModal, CommitPanel, FolderPickerModal)
-│   │   ├── stores/          # Svelte 5 Runes state store (appState.svelte.ts)
-│   │   ├── types/           # TypeScript interfaces & data models (ProjectItem, RepoInfo, PtySession, AgentKind, SteerContext, etc.)
-│   │   └── utils/           # Tauri & Server IPC bridge (tauri.ts)
+│   │   ├── components/      # UI components (Header, Sidebar, TerminalView, WebviewPane, FileList, DiffView, MarkdownPreview, SteerModal, CommitPanel, FolderPickerModal)
+│   │   ├── stores/          # Svelte 5 Runes state store (appState.svelte.ts, theme.svelte.ts)
+│   │   ├── types/           # TypeScript interfaces & data models
+│   │   └── utils/           # Tauri & Server IPC bridge (tauri.ts), agent detection (agentDetection.ts), webview steering (webviewSteer.ts)
 │   ├── App.svelte           # Main workspace layout shell & resizable split pane
 │   ├── app.css              # Global styles & Tailwind CSS directives
 │   └── main.ts              # Frontend bootstrap
+├── tests/                   # Boundary & unit test suites (Node test runner)
 ├── docs/                    # Architectural specs, URD, and version roadmaps
-└── package.json             # Frontend dependencies & scripts
+└── package.json             # Frontend dependencies & scripts (v3.0.0)
 ```
 
 ---

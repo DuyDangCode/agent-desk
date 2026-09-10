@@ -1,11 +1,12 @@
-# 🏛️ AGENTDECK — COMPREHENSIVE TECHNICAL ARCHITECTURE
+# 🏛️ KESTREL — COMPREHENSIVE TECHNICAL ARCHITECTURE
 ### *System Blueprint, Core Subsystems & Multi-Phase Architectural Evolution*
+*(Formerly AgentDeck)*
 
 ---
 
 ## 1. Executive Architectural Overview
 
-**AgentDeck** is engineered as a high-performance, ultra-low memory desktop control harness for terminal-first AI coding agents (Google Antigravity, OpenCode, Claude Code, Aider, Gemini CLI, Goose Agent, and local LLM runners).
+**Kestrel** is engineered as a high-performance, ultra-low memory desktop control harness for terminal-first AI coding agents (Google Antigravity, OpenCode, Claude Code, Aider, Gemini CLI, Goose Agent, and local LLM runners).
 
 The architecture bridges the gap between **autonomous multi-file CLI agent execution** and **human-in-the-loop verification**, coupling an embedded pseudo-terminal (PTY) supervisor with an in-process Git differential engine and a horizontal multi-project navigation deck.
 
@@ -299,33 +300,58 @@ The Agent Event Bridge enables coding agents (Claude Code, OpenCode, Antigravity
 
 ---
 
-### 3.6. Embedded Webview Preview & Direct Component Steering Subsystem (`WebviewPane.svelte` + `webviewSteer.ts`)
+### 3.6. Embedded Webview Preview, Smart Reverse Proxy & Component Steering Subsystem (`preview.rs`, `WebviewPane.svelte`, `webviewSteer.ts`)
 
-The Webview Preview Subsystem provides real-time frontend verification and visual-to-agent prompt synthesis.
+The Webview Preview Subsystem provides real-time frontend verification, full reverse proxying, and visual-to-agent prompt synthesis.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                   EMBEDDED PREVIEW BROWSER & COMPONENT STEERING                        │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │ 1. Dev Server Detection: Scans terminal output for local URLs (Vite/Next.js/ports)     │
-│ 2. Embedded Preview Canvas (`WebviewPane.svelte`):                                     │
-│    - Responsive Viewports: Full Desktop, Tablet (768px), Mobile (375px)                │
-│    - Normalization: Ports (`3000`), hosts (`localhost:5173`) converted to valid URLs  │
-│ 3. Interactive Crosshair Inspector (`isInspectMode`):                                  │
-│    - Injects inspection script into preview iframe                                     │
+│ 2. Smart Reverse Proxy Gateway (Port 4020):                                           │
+│    - Rust backend proxies HTML, JS modules, CSS, chunks, and API requests to dev port  │
+│    - Injects AGENTDECK_INSPECTOR_JS into HTML responses automatically                  │
+│    - Serves friendly "Dev Server Offline" screen when local server is down             │
+│ 3. Dual Preview Modes:                                                                 │
+│    - Embedded iframe canvas (`WebviewPane.svelte`) with Desktop, Tablet, Mobile scales │
+│    - Separate native Tauri Webview window (`agentdeck-preview`) with full OS controls  │
+│ 4. Interactive Crosshair Inspector & In-Window Steer Modal:                            │
 │    - Live hover highlighting and element bounding box selection                        │
-│    - Context extraction: HTML snippet, CSS classes, tag name, selector,                │
-│      and source annotations (`data-component`, `data-source-file`, `data-source-line`) │
-│ 4. Structured Prompt Synthesis (`webviewSteer.ts`):                                    │
-│    - Formats UI component context + developer review instruction                       │
+│    - Context extraction: HTML snippet, CSS classes, tag, selector, source annotations  │
+│    - In-window floating steer modal posting to `/api/component-steer`                  │
 │ 5. Bracketed Paste Injection: Direct atomic stream into agent PTY session (`\x1b[200~`)│
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 #### Key Components:
+* **Smart Reverse Proxy Gateway (`src-tauri/src/preview.rs` & `server/src/main.rs`):** High-throughput Axum/Hyper proxy handling header manipulation, path virtualization, content rewriting, and inspector injection.
+* **Native Webview Window Controller (`commands.rs`):** Manages `open_native_preview_window`, `close_native_preview_window`, `is_native_preview_open`, `focus_native_preview_window`, `reload_native_preview_window`, and `set_native_preview_inspect`.
 * **Embedded Webview Pane (`WebviewPane.svelte`):** Toggleable canvas tab and split mode with URL navigation, reload button, device viewport switching, and session target picker.
 * **Dev Server Auto-Detector (`detectDevServerUrl` in `webviewSteer.ts`):** Automatically extracts server endpoints (e.g. `http://localhost:5173/`, `http://localhost:3000/`) from terminal logs.
 * **DOM Inspector & Prompt Synthesizer (`formatComponentSteerPrompt`, `generateInspectorScript`):** Bridges browser DOM inspection directly into actionable terminal prompts.
+
+---
+
+### 3.7. Kernel-Level Process Inspection & Intelligent Agent Detection (`pty/mod.rs`, `agent-detection/`, `agentDetection.ts`)
+
+The Agent Detection Subsystem accurately tracks running foreground applications and agent states without relying solely on terminal output heuristics.
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                 KERNEL PROCESS INSPECTION & AGENT STATE MACHINE PIPELINE               │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ 1. Kernel /proc Inspection: Reads `/proc/<pid>/stat` (tpgid) and task children tree    │
+│ 2. Binary Matcher: Matches foreground executable against known agent binaries          │
+│ 3. Modular TOML Rules (`agent-detection/*.toml`):                                      │
+│    - Configurable pattern rules for Antigravity, Claude, OpenCode, Aider, Gemini, etc.│
+│ 4. Global State Machine (`agentDetection.ts`):                                        │
+│    - Tracks transitions: Idle ➔ Running ➔ Blocked (Permission) ➔ Completed             │
+│ 5. Auditory Attention Chime & Tab Renaming:                                           │
+│    - Non-intrusive audio alert (`playAlertSound`) upon permission request              │
+│    - Dynamic session tab title update honoring user-set custom titles                  │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -333,18 +359,18 @@ The Webview Preview Subsystem provides real-time frontend verification and visua
 
 | Architectural Dimension | Version 1.0 (MVP) — Baseline | Version 2.0 — Implemented & Verified | Version 3.0 — Platform & Extensibility |
 | :--- | :--- | :--- | :--- |
-| **Workspace Scope** | Single active Git repository | **Multi-Project Deck** (Horizontal navigation bar, parallel state isolation, 1-click attach) | **Remote LAN/VPN Access** (PWA frontend accessible from any device on same network via QR code) |
-| **Process Boundaries** | Local desktop process + child PTY shells | Local desktop process + concurrent PTY registry map with session persistence | Local desktop + Axum HTTP/WS server streaming PTY to remote PWA clients + WASM plugin sandbox |
-| **PTY Concurrency** | Multi-session tabs (single active CWD) | **Multi-PTY Registry & Canvas Pool** (Tokio channels, isolated CWD per project, persistent DOM pool) | **Remote WebSocket PTY Streaming** (Axum WS server → remote `@xterm/xterm` canvas on phone/tablet) |
-| **Terminal Canvas** | `@xterm/xterm` + WebGL + Unicode 11 | Split layout deck (single, horizontal split, vertical split) + Smart TUI bottom pinning | PWA remote terminal canvas with same xterm rendering on mobile browsers |
-| **Visual Review & Preview** | Side-by-side & unified git diffs | Rich Markdown render preview (`.md`, `.mdx`) | **Embedded Preview Browser** (`WebviewPane`) with responsive viewports & DOM crosshair inspector |
+| **Workspace Scope** | Single active Git repository | **Multi-Project Deck** (Horizontal navigation bar, parallel state isolation, 1-click attach) | **Sidebar Project Sessions Tree** + Remote LAN/VPN Access (PWA) |
+| **Process Boundaries** | Local desktop process + child PTY shells | Local desktop process + concurrent PTY registry map with session persistence | Local desktop + **Kernel `/proc` Process Inspector** + Axum HTTP/WS server |
+| **PTY Concurrency** | Multi-session tabs (single active CWD) | **Multi-PTY Registry & Canvas Pool** (Tokio channels, isolated CWD per project, persistent DOM pool) | Concurrent PTY registry with **Dynamic Agent State Machine** & Title Renaming |
+| **Terminal Canvas** | `@xterm/xterm` + WebGL + Unicode 11 | Split layout deck (single, horizontal split, vertical split) + Smart TUI bottom pinning | Split terminal deck + **Terminal Settings Modal** (custom fonts, cursor, scrollback) |
+| **Visual Review & Preview** | Side-by-side & unified git diffs | Rich Markdown render preview (`.md`, `.mdx`) | **Smart Reverse Proxy Preview** (`WebviewPane` + Native Pop-out Window + Inspector) |
 | **Git Diff Engine** | In-process `git2` + Myers buffer fallback | `similar` token intra-line diffing + flex filter chips + AI commit synth | Same engine exposed via Axum REST API for remote PWA clients |
-| **Context Steering** | Drag selection + Bracketed Paste injection | Reusable prompt templates, "Explain Code" template & 1-click presets | **Direct UI Component Steering** + Automated pre/post linter hooks + Native MCP server |
-| **State Persistence** | `localStorage` (Theme & UI flags) | `localStorage` (Projects, templates, LLM settings, active tabs) | PWA service worker offline cache + `localStorage` on remote devices |
-| **Network Protocols** | Tauri IPC / Local WebSocket (Axum) | Tauri IPC / Local WebSocket (Axum) + `/agent-events` HTTP listener | LAN WebSocket PTY streaming, MCP JSON-RPC, WASM Extism |
-| **Primary Rust Crates** | `portable-pty`, `git2`, `notify-debouncer-mini` | + `similar`, `tokio` channels | + `extism`, `mcp-sdk` |
-| **Memory Target** | **< 50MB RAM** (Idle baseline) | **< 90MB RAM** (3 active projects & PTYs) | **< 120MB RAM** (With PWA server & plugins) |
-| **Cold Startup Time** | **< 400ms** | **< 500ms** | **< 600ms** |
+| **Context Steering** | Drag selection + Bracketed Paste injection | Reusable prompt templates, "Explain Code" template & 1-click presets | **In-Window Floating Steer Modal & DOM Crosshair Inspector** + Diagnostic Hooks |
+| **State Persistence** | `localStorage` (Theme & UI flags) | `localStorage` (Projects, templates, LLM settings, active tabs) | Persistent terminal configs, projects, preview state, and theme sync |
+| **Network Protocols** | Tauri IPC / Local WebSocket (Axum) | Tauri IPC / Local WebSocket (Axum) + `/agent-events` HTTP listener | Full Reverse Proxy Gateway, `/api/component-steer`, LAN WebSocket PTY |
+| **Primary Rust Crates** | `portable-pty`, `git2`, `notify-debouncer-mini` | + `similar`, `tokio` channels | + `preview.rs` proxy engine, `/proc` parser |
+| **Memory Target** | **< 50MB RAM** (Idle baseline) | **< 90MB RAM** (3 active projects & PTYs) | **< 100MB RAM** (With Reverse Proxy & Preview) |
+| **Cold Startup Time** | **< 400ms** | **< 500ms** | **< 550ms** |
 
 ---
 

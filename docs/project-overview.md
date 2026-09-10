@@ -1,13 +1,14 @@
-# PROJECT OVERVIEW: AGENTDECK
+# PROJECT OVERVIEW: KESTREL
 ### *The Human-Centric Review Harness & Workspace for CLI Coding Agents*
+*(Formerly AgentDeck)*
 
 ---
 
 ## 1. Executive Summary
 
-**AgentDeck** is an open-source, ultra-lightweight desktop platform engineered to serve as the **control bridge and review harness** for terminal-first AI coding agents (such as Google Antigravity, OpenCode, Claude Code, Aider, Gemini CLI, Goose Agent, and bespoke local LLM runners).
+**Kestrel** is an open-source, ultra-lightweight desktop platform engineered to serve as the **control bridge and review harness** for terminal-first AI coding agents (such as Google Antigravity, OpenCode, Claude Code, Aider, Gemini CLI, Goose Agent, and bespoke local LLM runners).
 
-Rather than delegating software construction entirely to autonomous systems or forcing developers into clunky terminal outputs, **AgentDeck puts the human reviewer in the pilot seat**. Built with **Tauri v2** and **Rust**, it pairs an embedded multi-session pseudo-terminal (PTY) with an interactive, real-time Git differential review canvas and a **horizontal multi-project navigation deck**. Developers orchestrate agents across multiple repositories and folders in parallel while maintaining granular visual oversight, multi-line code inspection, and bi-directional prompt injection into ongoing CLI sessions.
+Rather than delegating software construction entirely to autonomous systems or forcing developers into clunky terminal outputs, **Kestrel puts the human reviewer in the pilot seat**. Built with **Tauri v2** and **Rust**, it pairs an embedded multi-session pseudo-terminal (PTY) with an interactive, real-time Git differential review canvas and a **horizontal multi-project navigation deck**. Developers orchestrate agents across multiple repositories and folders in parallel while maintaining granular visual oversight, multi-line code inspection, and bi-directional prompt injection into ongoing CLI sessions.
 
 ---
 
@@ -128,13 +129,25 @@ To act as the **primary harness** for any CLI coding agent: giving developers fu
 * **📁 In-Explorer Directory & Repository Management:** Create new directories and initialize Git repositories (`git init`) directly from the desktop File Explorer (`FolderPickerModal`).
 * **Remote Branch Guard:** Disallow invalid remote branch checkouts, protecting developers from detached states.
 
-### 4.6. Embedded Preview Browser & UI Component Steering (V3)
-* **Embedded Webview Pane (`WebviewPane.svelte`):** Live in-app web preview with responsive viewport presets (Desktop, Tablet, Mobile) and URL bar navigation.
+### 4.6. Embedded Preview Browser, Smart Reverse Proxy & UI Component Steering (V3)
+* **Embedded Webview Pane & Pop-Out Native Window:** Live in-app web preview (`WebviewPane.svelte`) with dual modes: an embedded iframe canvas with responsive viewports (Full Desktop with proportional scale, Tablet 768px, Mobile 375px) or an external, pop-out native Tauri Webview window (`agentdeck-preview`) with complete OS window controls.
+* **Smart Full Reverse Proxy Gateway:** Built-in transparent reverse proxy engine in the Rust backend on port 4020, forwarding HTML, JS modules, CSS, chunks, and API requests to target local dev servers (Vite, Next.js, Webpack, ports `5173`, `3000`, `8080`).
+* **Dev Server Offline Graceful Fallback:** Automatically detects if the target development server is not running, serving an elegant live-polling status screen with automatic reconnection.
+* **Interactive DOM Crosshair Inspector & In-Window Steer:** Highlights hovered DOM elements with bounding boxes and extracts HTML snippets, CSS classes, tag names, computed selectors, and source mapping annotations (`data-component`, `data-source-file`, `data-source-line`). Provides an in-window floating Steer Modal that directly injects formatted prompts into the active agent session via bracketed paste (`\x1b[200~`).
 * **Automatic Dev Server Detection (`detectDevServerUrl`):** Detects Vite, Next.js, and localhost dev servers from active terminal logs.
-* **Interactive DOM Crosshair Inspector (`isInspectMode`):** Injected lightweight inspector highlights DOM elements and extracts HTML snippets, CSS classes, selectors, and source metadata.
-* **Direct UI Component Steering (`webviewSteer.ts`):** Directly injects structured UI review packets into the agent's PTY session via bracketed paste.
 
-### 4.7. Remote LAN/VPN Terminal Access (V3 — Planned)
+### 4.7. Kernel-Level Process Inspection & Intelligent Agent Detection (V3)
+* **Linux Kernel `/proc` Inspection:** High-fidelity foreground process inspection (`inspect_foreground_process`) reading `/proc/<pid>/stat`, terminal process group (`tpgid`), and process tree hierarchy.
+* **Modular TOML Agent Detection Rules:** Configurable detection definitions in `agent-detection/` for Antigravity, Claude Code, OpenCode, Aider AI, Gemini CLI, Cursor, and Codex.
+* **Global Agent State Machine:** Tracks lifecycle transitions (`idle` ➔ `running` ➔ `blocked` ➔ `completed`).
+* **Auditory Attention Chimes & Visual Alerts:** Plays audio chime alert (`playAlertSound`) and pulses attention badges when an agent requests user input or confirmation.
+* **Dynamic Tab Title Renaming:** Intelligently renames terminal session tabs to the active agent or CLI tool while preserving user-defined custom titles.
+
+### 4.8. Collapsible Project Sessions Tree & Terminal Customization (V3)
+* **Sidebar Project Sessions Tree:** Hierarchical tree view displaying attached projects with collapsible terminal sessions, direct inline `+` session buttons per project, and agent status badges.
+* **Terminal Settings Modal:** Accessible terminal configuration dialog for customizing font size, font family, line height, cursor style, and scrollback history.
+
+### 4.9. Remote LAN/VPN Terminal Access (V3 — Planned)
 * **PWA Remote Terminal:** The desktop application's internal Axum HTTP/WebSocket server (port `4020`) streams live PTY sessions to any device on the same Wi-Fi/LAN/VPN network. The Svelte frontend is packaged as a Progressive Web App (PWA) accessible from phone/tablet browsers via local IP address or QR code scan.
 * **Remote `@xterm/xterm` Canvas:** Renders a full-featured terminal interface on mobile browsers with the same rendering quality as the desktop app, connected to live agent PTY sessions via WebSocket.
 * **Zero-Install Access:** No app installation needed on the remote device — simply open a browser and navigate to the desktop machine's IP address.

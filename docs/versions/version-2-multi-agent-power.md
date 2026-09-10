@@ -5,7 +5,7 @@
 
 ## 1. Executive Summary & V2 Objective
 
-Building upon the core foundation delivered in [Version 1.0 (MVP)](file:///home/thanhduy/Projects/agent_deck/docs/versions/version-1-mvp.md), **Version 2.0** elevates AgentDeck into a high-productivity **Multi-Project & Multi-Agent Control Center**. 
+Building upon the core foundation delivered in [Version 1.0 (MVP)](version-1-mvp.md), **Version 2.0** elevates AgentDeck into a high-productivity **Multi-Project & Multi-Agent Control Center**. 
 
 The primary objectives of V2 are:
 1. **Multi-Project Management (Horizontal Project Deck):** Attach multiple project folders/repositories simultaneously. A top horizontal bar allows seamless navigation, instant project switching, and parallel multi-project orchestration without losing terminal sessions or review states.

@@ -1,12 +1,13 @@
-# USER REQUIREMENTS DOCUMENT (URD): AGENTDECK
+# USER REQUIREMENTS DOCUMENT (URD): KESTREL
 ### *The Human-Centric Review Harness & Workspace for CLI Coding Agents*
+*(Formerly AgentDeck)*
 
 ---
 
 ## 1. Introduction & Purpose
 
 ### 1.1 Purpose
-This User Requirements Document (URD) establishes the comprehensive functional, non-functional, and workflow requirements for **AgentDeck**—an ultra-lightweight desktop platform designed as a control bridge and human-in-the-loop review harness for terminal-based AI coding agents (such as Google Antigravity, OpenCode, Claude Code, Aider, Gemini CLI, Goose Agent, Codex, and local LLM runners).
+This User Requirements Document (URD) establishes the comprehensive functional, non-functional, and workflow requirements for **Kestrel**—an ultra-lightweight desktop platform designed as a control bridge and human-in-the-loop review harness for terminal-based AI coding agents (such as Google Antigravity, OpenCode, Claude Code, Aider, Gemini CLI, Goose Agent, Codex, and local LLM runners).
 
 ### 1.2 Target Audience
 * **AI-Assisted Software Engineers & Architects:** Developers supervising automated multi-file code generation who require spatial awareness, diff tracking, and fast steering.
@@ -14,7 +15,7 @@ This User Requirements Document (URD) establishes the comprehensive functional, 
 * **Open-Source Maintainers:** Developers seeking a lightweight, high-performance workspace without the memory overhead of traditional Electron-based IDEs.
 
 ### 1.3 Scope
-AgentDeck serves as the desktop harness combining an embedded multi-session pseudo-terminal (PTY) with an interactive, real-time Git differential canvas. It does not replace or bundle proprietary LLMs directly; rather, it interfaces universally with any CLI agent running in a terminal session.
+Kestrel serves as the desktop harness combining an embedded multi-session pseudo-terminal (PTY) with an interactive, real-time Git differential canvas. It does not replace or bundle proprietary LLMs directly; rather, it interfaces universally with any CLI agent running in a terminal session.
 
 ---
 
@@ -146,6 +147,35 @@ AgentDeck serves as the desktop harness combining an embedded multi-session pseu
 | **FR-GIT-05** | **Should** | ✅ Implemented | The system provides AI-assisted commit message generation based on staged hunks. |
 | **FR-GIT-06** | **Should** | ✅ Implemented | The application must display a real-time persistent loading toast notification with an animated spinner during Git push and pull operations, transitioning to success or error summaries upon completion. |
 | **FR-GIT-07** | **Must** | ✅ Implemented | The system must prevent direct checkout of remote Git branches across the UI and Git engine, guiding the user to create a local tracking branch instead. |
+
+### 4.7 Embedded Preview Browser, Smart Reverse Proxy & UI Component Steering (`PREV`)
+
+| ID | Priority | Status | Requirement Description |
+| :--- | :---: | :---: | :--- |
+| **FR-PREV-01** | **Must** | ✅ Implemented | The application must provide an embedded web preview canvas (`WebviewPane.svelte`) with responsive viewport presets (Desktop, Tablet 768px, Mobile 375px) and address bar navigation. |
+| **FR-PREV-02** | **Must** | ✅ Implemented | The backend must provide a transparent reverse proxy engine on port 4020 that forwards HTML, JS modules, CSS, chunks, and API requests to target local dev servers. |
+| **FR-PREV-03** | **Must** | ✅ Implemented | The application must allow opening the preview in a separate, native OS Webview window (`agentdeck-preview`) with focus, reload, and inspect controls. |
+| **FR-PREV-04** | **Should** | ✅ Implemented | The reverse proxy must gracefully display a live-polling offline status screen when the target local dev server is unreachable or offline. |
+| **FR-PREV-05** | **Should** | ✅ Implemented | The system must automatically scan active terminal output streams to auto-detect running development servers (Vite, Next.js, Webpack, ports 5173, 3000, 8080). |
+| **FR-PREV-06** | **Must** | ✅ Implemented | The application must provide an interactive crosshair DOM inspector highlighting hovered elements with bounding boxes and extracting tag, CSS classes, selector, and source mapping annotations. |
+| **FR-PREV-07** | **Must** | ✅ Implemented | The preview page must support an in-window floating Steer Modal that formats element metadata and human instructions directly into terminal stdin via bracketed paste (`\x1b[200~`). |
+
+### 4.8 Kernel-Level Process Inspection & Intelligent Agent Detection (`DET`)
+
+| ID | Priority | Status | Requirement Description |
+| :--- | :---: | :---: | :--- |
+| **FR-DET-01** | **Must** | ✅ Implemented | The backend must inspect the Linux kernel process hierarchy (`/proc/<pid>/stat`, `tpgid`, task children) to accurately determine the active foreground process. |
+| **FR-DET-02** | **Must** | ✅ Implemented | The application must provide modular, configurable TOML detection rules in `agent-detection/` for known AI agents (Antigravity, Claude Code, Gemini, Cursor, Codex, OpenCode, Aider). |
+| **FR-DET-03** | **Must** | ✅ Implemented | The frontend must maintain a reactive Global Agent State Machine tracking lifecycle states (`idle` ➔ `running` ➔ `blocked` ➔ `completed`). |
+| **FR-DET-04** | **Should** | ✅ Implemented | The system must play an audio alert chime (`playAlertSound`) and display attention badges when an agent requires permission or user confirmation. |
+| **FR-DET-05** | **Should** | ✅ Implemented | The system must dynamically update session tab titles to the detected agent or CLI tool while preserving user-defined custom titles. |
+
+### 4.9 Sidebar Project Sessions Tree & Terminal Customization (`SIDE`)
+
+| ID | Priority | Status | Requirement Description |
+| :--- | :---: | :---: | :--- |
+| **FR-SIDE-01** | **Must** | ✅ Implemented | The sidebar must render an interactive project sessions tree displaying attached projects with collapsible session lists, per-project session creation, and agent badges. |
+| **FR-SIDE-02** | **Should** | ✅ Implemented | The application must provide a Terminal Settings Modal for configuring font size, font family, line height, cursor style, and scrollback buffer. |
 
 ---
 

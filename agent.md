@@ -1,5 +1,6 @@
 # 🤖 AGENT.MD — OPERATIONAL DIRECTIVE & ROADMAP GUIDE
-### *For AI Agents & Developers Building and Extending AgentDeck*
+### *For AI Agents & Developers Building and Extending Kestrel*
+*(Formerly AgentDeck)*
 
 See [AGENT.md](file:///home/thanhduy/Projects/agent_deck/AGENT.md) for the complete operational directives, system invariants, coding standards, and roadmap implementation directives.
 
@@ -7,7 +8,7 @@ See [AGENT.md](file:///home/thanhduy/Projects/agent_deck/AGENT.md) for the compl
 
 ## Documentation & Architecture Sync Protocol
 
-Every AI Agent and developer contributing code or refactoring AgentDeck **MUST** strictly adhere to this synchronization protocol to maintain absolute architectural coherence across the repository.
+Every AI Agent and developer contributing code or refactoring Kestrel **MUST** strictly adhere to this synchronization protocol to maintain absolute architectural coherence across the repository.
 
 ### 1. The "Doc-Code Parity" Invariant
 Whenever modifying code, adding features, or altering system architecture, the Agent is strictly required to execute the following 3-step sync:
