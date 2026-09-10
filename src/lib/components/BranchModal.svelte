@@ -11,7 +11,8 @@
     ArrowDownToLine, 
     ArrowUpFromLine, 
     Layers,
-    Sparkles
+    Sparkles,
+    Loader2
   } from 'lucide-svelte';
 
   let activeTab: 'branches' | 'stashes' = $state('branches');
@@ -201,7 +202,11 @@
                         class="px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 text-[11px] font-medium transition cursor-pointer flex items-center space-x-1 disabled:opacity-50"
                         title="Pull changes from remote (git pull)"
                       >
-                        <ArrowDownToLine class="w-3 h-3 {appState.isPulling ? 'animate-bounce' : ''}" />
+                        {#if appState.isPulling}
+                          <Loader2 class="w-3 h-3 animate-spin" />
+                        {:else}
+                          <ArrowDownToLine class="w-3 h-3" />
+                        {/if}
                         <span>{appState.isPulling ? 'Pulling...' : 'Pull'}</span>
                       </button>
                       <button
@@ -212,7 +217,11 @@
                         class="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 hover:bg-emerald-200 dark:hover:bg-emerald-800 text-emerald-800 dark:text-emerald-200 text-[11px] font-medium transition cursor-pointer flex items-center space-x-1 disabled:opacity-50"
                         title="Push commits to remote (git push)"
                       >
-                        <ArrowUpFromLine class="w-3 h-3 {appState.isPushing ? 'animate-bounce' : ''}" />
+                        {#if appState.isPushing}
+                          <Loader2 class="w-3 h-3 animate-spin" />
+                        {:else}
+                          <ArrowUpFromLine class="w-3 h-3" />
+                        {/if}
                         <span>{appState.isPushing ? 'Pushing...' : 'Push'}</span>
                       </button>
                       <span class="flex items-center space-x-1 text-[11px] text-blue-600 dark:text-blue-400 font-semibold shrink-0 pl-1 border-l border-blue-200 dark:border-blue-800">

@@ -8,7 +8,8 @@
     ArrowDown, 
     Layers, 
     FolderGit2,
-    AlertCircle
+    AlertCircle,
+    Loader2
   } from 'lucide-svelte';
 
   const hasAgents = $derived(appState.agentSessions.length > 0);
@@ -53,27 +54,39 @@
     <!-- Git Sync Ahead/Behind -->
     {#if appState.repoInfo}
       <div class="hidden sm:flex items-center space-x-1.5 shrink-0">
-        {#if (appState.repoInfo.behind_count ?? 0) > 0}
-          <span class="flex items-center text-blue-600 dark:text-blue-400" title="{appState.repoInfo.behind_count} commits behind remote">
-            <ArrowDown class="w-2.5 h-2.5" />
-            <span>{appState.repoInfo.behind_count}</span>
+        {#if appState.isPushing}
+          <span class="flex items-center space-x-1 text-emerald-600 dark:text-emerald-400 font-medium" title="Pushing commits to remote...">
+            <Loader2 class="w-2.5 h-2.5 animate-spin" />
+            <span>Pushing...</span>
           </span>
-        {/if}
-        {#if (appState.repoInfo.ahead_count ?? 0) > 0}
-          <span class="flex items-center text-emerald-600 dark:text-emerald-400" title="{appState.repoInfo.ahead_count} commits ahead of remote">
-            <ArrowUp class="w-2.5 h-2.5" />
-            <span>{appState.repoInfo.ahead_count}</span>
-          </span>
-        {/if}
-        {#if dirtyCount === 0}
-          <span class="flex items-center space-x-0.5 text-emerald-600 dark:text-emerald-400" title="Clean working tree">
-            <Check class="w-3 h-3" />
-            <span class="hidden md:inline">Clean</span>
+        {:else if appState.isPulling}
+          <span class="flex items-center space-x-1 text-blue-600 dark:text-blue-400 font-medium" title="Pulling latest changes from remote...">
+            <Loader2 class="w-2.5 h-2.5 animate-spin" />
+            <span>Pulling...</span>
           </span>
         {:else}
-          <span class="text-amber-600 dark:text-amber-400 font-medium" title="{dirtyCount} modified files">
-            ● {dirtyCount} changes
-          </span>
+          {#if (appState.repoInfo.behind_count ?? 0) > 0}
+            <span class="flex items-center text-blue-600 dark:text-blue-400" title="{appState.repoInfo.behind_count} commits behind remote">
+              <ArrowDown class="w-2.5 h-2.5" />
+              <span>{appState.repoInfo.behind_count}</span>
+            </span>
+          {/if}
+          {#if (appState.repoInfo.ahead_count ?? 0) > 0}
+            <span class="flex items-center text-emerald-600 dark:text-emerald-400" title="{appState.repoInfo.ahead_count} commits ahead of remote">
+              <ArrowUp class="w-2.5 h-2.5" />
+              <span>{appState.repoInfo.ahead_count}</span>
+            </span>
+          {/if}
+          {#if dirtyCount === 0}
+            <span class="flex items-center space-x-0.5 text-emerald-600 dark:text-emerald-400" title="Clean working tree">
+              <Check class="w-3 h-3" />
+              <span class="hidden md:inline">Clean</span>
+            </span>
+          {:else}
+            <span class="text-amber-600 dark:text-amber-400 font-medium" title="{dirtyCount} modified files">
+              ● {dirtyCount} changes
+            </span>
+          {/if}
         {/if}
       </div>
     {/if}

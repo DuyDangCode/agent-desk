@@ -658,7 +658,7 @@ class TestAppState {
     setUpstream = false,
     mockApiPush?: (repoPath: string, remote?: string, branch?: string, setUpstream?: boolean) => Promise<string>
   ) {
-    if (!this.repoPath || this.isPushing) return;
+    if (!this.repoPath || this.isPushing || this.isPulling) return;
     try {
       this.isPushing = true;
       this.showToast('Pushing code to remote...', 'loading', 0);
@@ -678,7 +678,7 @@ class TestAppState {
     branch?: string,
     mockApiPull?: (repoPath: string, remote?: string, branch?: string) => Promise<string>
   ) {
-    if (!this.repoPath || this.isPulling) return;
+    if (!this.repoPath || this.isPulling || this.isPushing) return;
     try {
       this.isPulling = true;
       this.showToast('Pulling latest changes from remote...', 'loading', 0);
@@ -1409,6 +1409,38 @@ describe('Push & Pull Code Loading Toast Notification Lifecycle', () => {
       assert.equal(state.toastMessage, 'Push failed: Remote branch protected: forced update rejected');
       assert.equal(state.toastType, 'error');
     });
+
+    it('In-Bound: concurrent call to pullChanges or pushChanges while pushing is rejected without clearing loading toast', async () => {
+      state.defaultTerminalPath = '/test/repo';
+      let resolvePush!: (msg: string) => void;
+      const pushPromiseDeferred = new Promise<string>((res) => {
+        resolvePush = res;
+      });
+
+      const pushPromise = state.pushChanges('origin', 'main', false, async () => {
+        return pushPromiseDeferred;
+      });
+
+      assert.equal(state.isPushing, true);
+      assert.equal(state.toastType, 'loading');
+
+      // Attempt concurrent push
+      await state.pushChanges();
+      assert.equal(state.isPushing, true);
+      assert.equal(state.toastType, 'loading');
+      assert.equal(state.toastMessage, 'Pushing code to remote...');
+
+      // Attempt concurrent pull while push is active
+      await state.pullChanges();
+      assert.equal(state.isPulling, false);
+      assert.equal(state.isPushing, true);
+      assert.equal(state.toastMessage, 'Pushing code to remote...');
+
+      resolvePush('Pushed commits to remote');
+      await pushPromise;
+      assert.equal(state.isPushing, false);
+      assert.equal(state.toastType, 'success');
+    });
   });
 
   describe('Pull Code Loading Toast Boundary Tests', () => {
@@ -1476,6 +1508,32 @@ describe('Push & Pull Code Loading Toast Notification Lifecycle', () => {
       assert.equal(state.isPulling, false);
       assert.equal(state.toastMessage, 'Pull failed: Merge conflict in src/App.svelte');
       assert.equal(state.toastType, 'error');
+    });
+
+    it('In-Bound: concurrent call to pushChanges while pulling is rejected without clearing loading toast', async () => {
+      state.defaultTerminalPath = '/test/repo';
+      let resolvePull!: (msg: string) => void;
+      const pullPromiseDeferred = new Promise<string>((res) => {
+        resolvePull = res;
+      });
+
+      const pullPromise = state.pullChanges('origin', 'main', async () => {
+        return pullPromiseDeferred;
+      });
+
+      assert.equal(state.isPulling, true);
+      assert.equal(state.toastType, 'loading');
+
+      // Attempt concurrent push while pull is active
+      await state.pushChanges();
+      assert.equal(state.isPushing, false);
+      assert.equal(state.isPulling, true);
+      assert.equal(state.toastMessage, 'Pulling latest changes from remote...');
+
+      resolvePull('Fast-forwarded to origin/main');
+      await pullPromise;
+      assert.equal(state.isPulling, false);
+      assert.equal(state.toastType, 'success');
     });
   });
 

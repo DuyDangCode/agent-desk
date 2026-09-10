@@ -556,20 +556,28 @@ async fn list_stashes_handler(
 async fn pull_repo_handler(
     Json(req): Json<PushPullReq>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    GitEngine::pull(&req.path, req.remote.as_deref(), req.branch.as_deref())
-        .map(|msg| Json(serde_json::json!({ "success": true, "message": msg })))
-        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))
+    tokio::task::spawn_blocking(move || {
+        GitEngine::pull(&req.path, req.remote.as_deref(), req.branch.as_deref())
+    })
+    .await
+    .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Task join error: {}", e)))?
+    .map(|msg| Json(serde_json::json!({ "success": true, "message": msg })))
+    .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))
 }
 
 async fn push_repo_handler(
     Json(req): Json<PushPullReq>,
 ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    GitEngine::push(
-        &req.path,
-        req.remote.as_deref(),
-        req.branch.as_deref(),
-        req.set_upstream.unwrap_or(false),
-    )
+    tokio::task::spawn_blocking(move || {
+        GitEngine::push(
+            &req.path,
+            req.remote.as_deref(),
+            req.branch.as_deref(),
+            req.set_upstream.unwrap_or(false),
+        )
+    })
+    .await
+    .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Task join error: {}", e)))?
     .map(|msg| Json(serde_json::json!({ "success": true, "message": msg })))
     .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))
 }

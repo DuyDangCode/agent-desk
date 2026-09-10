@@ -18,6 +18,7 @@ import type {
   CanvasTab,
   AgentStatus
 } from '$lib/types';
+import { tick } from 'svelte';
 import { 
   formatComponentSteerPrompt, 
   encodeBracketedPaste, 
@@ -1439,12 +1440,20 @@ class AppState {
     }
   }
 
-  async pullChanges(remote?: string, branch?: string) {
-    if (!this.repoPath || this.isPulling) return;
+  async pullChanges(
+    remote?: string,
+    branch?: string,
+    apiPull = apiPullRepository
+  ) {
+    if (!this.repoPath || this.isPulling || this.isPushing) return;
     try {
       this.isPulling = true;
       this.showToast('Pulling latest changes from remote...', 'loading', 0);
-      const msg = await apiPullRepository(this.repoPath, remote, branch);
+      await tick();
+      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      }
+      const msg = await apiPull(this.repoPath, remote, branch);
       await this.refreshDiffs(true);
       await this.loadBranches();
       this.showToast(msg || 'Pulled latest changes from remote', 'success');
@@ -1455,12 +1464,21 @@ class AppState {
     }
   }
 
-  async pushChanges(remote?: string, branch?: string, setUpstream = false) {
-    if (!this.repoPath || this.isPushing) return;
+  async pushChanges(
+    remote?: string,
+    branch?: string,
+    setUpstream = false,
+    apiPush = apiPushRepository
+  ) {
+    if (!this.repoPath || this.isPushing || this.isPulling) return;
     try {
       this.isPushing = true;
       this.showToast('Pushing code to remote...', 'loading', 0);
-      const msg = await apiPushRepository(this.repoPath, remote, branch, setUpstream);
+      await tick();
+      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      }
+      const msg = await apiPush(this.repoPath, remote, branch, setUpstream);
       await this.refreshDiffs(true);
       await this.loadBranches();
       this.showToast(msg || 'Pushed commits to remote', 'success');

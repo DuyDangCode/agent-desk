@@ -19,7 +19,8 @@
     Settings,
     CheckSquare,
     AlertCircle,
-    Globe
+    Globe,
+    Loader2
   } from 'lucide-svelte';
 
   let moreMenuOpen = $state(false);
@@ -225,10 +226,16 @@
     <button
       onclick={toggleMoreMenu}
       class="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-deck-muted dark:hover:text-deck-bright dark:hover:bg-deck-card transition cursor-pointer {moreMenuOpen ? 'bg-slate-100 dark:bg-deck-card text-slate-900 dark:text-deck-bright' : ''}"
-      title="More Actions & Tools"
+      title={appState.isPushing ? 'Pushing commits to remote...' : appState.isPulling ? 'Pulling latest changes...' : 'More Actions & Tools'}
       aria-label="More Actions"
     >
-      <MoreHorizontal class="w-4 h-4" />
+      {#if appState.isPushing}
+        <Loader2 class="w-4 h-4 text-emerald-500 animate-spin" />
+      {:else if appState.isPulling}
+        <Loader2 class="w-4 h-4 text-blue-500 animate-spin" />
+      {:else}
+        <MoreHorizontal class="w-4 h-4" />
+      {/if}
     </button>
 
     <!-- More Dropdown Popover Menu -->
@@ -252,8 +259,13 @@
             class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-slate-700 dark:text-deck-text hover:bg-slate-100 dark:hover:bg-deck-card transition text-left cursor-pointer disabled:opacity-50"
           >
             <div class="flex items-center space-x-2">
-              <ArrowDown class="w-3.5 h-3.5 text-blue-500" />
-              <span>Pull Changes</span>
+              {#if appState.isPulling}
+                <Loader2 class="w-3.5 h-3.5 text-blue-500 animate-spin" />
+                <span class="font-medium text-blue-600 dark:text-blue-400">Pulling...</span>
+              {:else}
+                <ArrowDown class="w-3.5 h-3.5 text-blue-500" />
+                <span>Pull Changes</span>
+              {/if}
             </div>
             {#if (appState.repoInfo.behind_count ?? 0) > 0}
               <span class="text-[10px] font-mono px-1 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold">
@@ -272,8 +284,13 @@
             class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-slate-700 dark:text-deck-text hover:bg-slate-100 dark:hover:bg-deck-card transition text-left cursor-pointer disabled:opacity-50"
           >
             <div class="flex items-center space-x-2">
-              <ArrowUp class="w-3.5 h-3.5 text-emerald-500" />
-              <span>Push Commits</span>
+              {#if appState.isPushing}
+                <Loader2 class="w-3.5 h-3.5 text-emerald-500 animate-spin" />
+                <span class="font-medium text-emerald-600 dark:text-emerald-400">Pushing...</span>
+              {:else}
+                <ArrowUp class="w-3.5 h-3.5 text-emerald-500" />
+                <span>Push Commits</span>
+              {/if}
             </div>
             {#if (appState.repoInfo.ahead_count ?? 0) > 0}
               <span class="text-[10px] font-mono px-1 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold">

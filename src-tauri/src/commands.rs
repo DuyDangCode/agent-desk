@@ -267,27 +267,35 @@ pub fn list_stashes(path: String) -> Result<Vec<StashInfo>, String> {
 }
 
 #[tauri::command]
-pub fn pull_repository(
+pub async fn pull_repository(
     path: String,
     remote: Option<String>,
     branch: Option<String>,
 ) -> Result<String, String> {
-    GitEngine::pull(&path, remote.as_deref(), branch.as_deref())
+    tokio::task::spawn_blocking(move || {
+        GitEngine::pull(&path, remote.as_deref(), branch.as_deref())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
-pub fn push_repository(
+pub async fn push_repository(
     path: String,
     remote: Option<String>,
     branch: Option<String>,
     set_upstream: Option<bool>,
 ) -> Result<String, String> {
-    GitEngine::push(
-        &path,
-        remote.as_deref(),
-        branch.as_deref(),
-        set_upstream.unwrap_or(false),
-    )
+    tokio::task::spawn_blocking(move || {
+        GitEngine::push(
+            &path,
+            remote.as_deref(),
+            branch.as_deref(),
+            set_upstream.unwrap_or(false),
+        )
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
