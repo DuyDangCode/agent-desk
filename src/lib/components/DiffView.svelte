@@ -18,7 +18,8 @@
     WrapText,
     FolderGit2,
     BookOpen,
-    Eye
+    Eye,
+    ChevronDown
   } from 'lucide-svelte';
   import { isMarkdownFile } from '$lib/utils/markdown';
   import { readFileContent } from '$lib/utils/tauri';
@@ -31,6 +32,9 @@
   let markdownRenderType = $state<'document' | 'diff'>('document');
   let markdownFileContent = $state<string>('');
   let isLoadingMarkdown = $state(false);
+
+  let isDiffModeDropdownOpen = $state(false);
+  let isMarkdownModeDropdownOpen = $state(false);
 
   // Multi-line selection state
   let selectedHunkIdx = $state<number | null>(null);
@@ -337,60 +341,173 @@
       <!-- Controls: Split/Unified Toggle & File Actions -->
       <div class="flex items-center space-x-2">
         {#if isMarkdown}
-          <!-- Markdown View Modes: Diff | Preview | Side-by-Side -->
-          <div class="flex items-center bg-gray-100 dark:bg-deck-card border border-deck-border rounded p-0.5 text-xs">
+          <!-- Markdown View Mode Dropdown: Diff | Preview | Split Preview -->
+          <div class="relative">
             <button
-              onclick={() => (markdownViewMode = 'diff')}
-              class="px-2 py-0.5 rounded flex items-center space-x-1 transition cursor-pointer {markdownViewMode === 'diff' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright'}"
-              title="Standard code diff"
+              type="button"
+              onclick={(e) => {
+                e.stopPropagation();
+                isMarkdownModeDropdownOpen = !isMarkdownModeDropdownOpen;
+                if (isMarkdownModeDropdownOpen) isDiffModeDropdownOpen = false;
+              }}
+              class="flex items-center space-x-1.5 px-2 py-1 bg-gray-100 dark:bg-deck-card hover:bg-gray-200 dark:hover:bg-deck-border/80 border border-deck-border rounded text-xs text-slate-700 dark:text-deck-bright font-mono transition cursor-pointer shadow-xs"
+              title="Change Markdown display view"
+              aria-haspopup="listbox"
+              aria-expanded={isMarkdownModeDropdownOpen}
             >
-              <FileCode class="w-3.5 h-3.5" />
-              <span>Diff</span>
+              {#if markdownViewMode === 'diff'}
+                <FileCode class="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span>Diff</span>
+              {:else if markdownViewMode === 'preview'}
+                <BookOpen class="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span>Preview</span>
+              {:else}
+                <Columns class="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span>Split Preview</span>
+              {/if}
+              <ChevronDown class="w-3 h-3 text-slate-400 shrink-0 transition-transform duration-150 {isMarkdownModeDropdownOpen ? 'rotate-180' : ''}" />
             </button>
-            <button
-              onclick={() => (markdownViewMode = 'preview')}
-              class="px-2 py-0.5 rounded flex items-center space-x-1 transition cursor-pointer {markdownViewMode === 'preview' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright'}"
-              title="Rendered Markdown Preview"
-            >
-              <BookOpen class="w-3.5 h-3.5" />
-              <span>Preview</span>
-            </button>
-            <button
-              onclick={() => (markdownViewMode = 'side-by-side')}
-              class="px-2 py-0.5 rounded flex items-center space-x-1 transition cursor-pointer {markdownViewMode === 'side-by-side' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright'}"
-              title="Diff and Rendered Markdown side-by-side"
-            >
-              <Columns class="w-3.5 h-3.5" />
-              <span class="hidden md:inline">Split Preview</span>
-            </button>
+
+            {#if isMarkdownModeDropdownOpen}
+              <button
+                type="button"
+                class="fixed inset-0 z-40 bg-transparent border-none cursor-default"
+                onclick={() => (isMarkdownModeDropdownOpen = false)}
+                aria-label="Close markdown view dropdown"
+                tabindex="-1"
+              ></button>
+
+              <div class="absolute top-full right-0 mt-1 w-44 bg-white dark:bg-deck-surface border border-deck-border rounded-lg shadow-xl z-50 py-1 font-sans text-xs animate-in fade-in zoom-in-95 duration-100">
+                <div class="px-2.5 py-1 text-[10px] font-semibold text-slate-400 dark:text-deck-muted uppercase tracking-wider border-b border-deck-border/50 mb-0.5">
+                  Markdown View
+                </div>
+                <button
+                  type="button"
+                  onclick={() => {
+                    markdownViewMode = 'diff';
+                    isMarkdownModeDropdownOpen = false;
+                  }}
+                  class="w-full px-2.5 py-1.5 text-left flex items-center justify-between hover:bg-slate-100 dark:hover:bg-deck-card transition cursor-pointer {markdownViewMode === 'diff' ? 'font-semibold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30' : 'text-slate-700 dark:text-deck-text'}"
+                >
+                  <div class="flex items-center space-x-2">
+                    <FileCode class="w-3.5 h-3.5 {markdownViewMode === 'diff' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-deck-muted'}" />
+                    <span>Diff</span>
+                  </div>
+                  {#if markdownViewMode === 'diff'}
+                    <Check class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  {/if}
+                </button>
+                <button
+                  type="button"
+                  onclick={() => {
+                    markdownViewMode = 'preview';
+                    isMarkdownModeDropdownOpen = false;
+                  }}
+                  class="w-full px-2.5 py-1.5 text-left flex items-center justify-between hover:bg-slate-100 dark:hover:bg-deck-card transition cursor-pointer {markdownViewMode === 'preview' ? 'font-semibold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30' : 'text-slate-700 dark:text-deck-text'}"
+                >
+                  <div class="flex items-center space-x-2">
+                    <BookOpen class="w-3.5 h-3.5 {markdownViewMode === 'preview' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-deck-muted'}" />
+                    <span>Preview</span>
+                  </div>
+                  {#if markdownViewMode === 'preview'}
+                    <Check class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  {/if}
+                </button>
+                <button
+                  type="button"
+                  onclick={() => {
+                    markdownViewMode = 'side-by-side';
+                    isMarkdownModeDropdownOpen = false;
+                  }}
+                  class="w-full px-2.5 py-1.5 text-left flex items-center justify-between hover:bg-slate-100 dark:hover:bg-deck-card transition cursor-pointer {markdownViewMode === 'side-by-side' ? 'font-semibold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30' : 'text-slate-700 dark:text-deck-text'}"
+                >
+                  <div class="flex items-center space-x-2">
+                    <Columns class="w-3.5 h-3.5 {markdownViewMode === 'side-by-side' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-deck-muted'}" />
+                    <span>Split Preview</span>
+                  </div>
+                  {#if markdownViewMode === 'side-by-side'}
+                    <Check class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  {/if}
+                </button>
+              </div>
+            {/if}
           </div>
         {/if}
 
         {#if !isMarkdown || markdownViewMode !== 'preview'}
-          <!-- View Mode Toggle -->
-          <div class="flex items-center bg-gray-100 dark:bg-deck-card border border-deck-border rounded p-0.5 text-xs">
+          <!-- Diff Mode Dropdown: Split | Unified -->
+          <div class="relative">
             <button
-              onclick={() => {
-                clearSelection();
-                appState.setDiffViewMode('split');
+              type="button"
+              onclick={(e) => {
+                e.stopPropagation();
+                isDiffModeDropdownOpen = !isDiffModeDropdownOpen;
+                if (isDiffModeDropdownOpen) isMarkdownModeDropdownOpen = false;
               }}
-              class="px-2 py-0.5 rounded flex items-center space-x-1 transition {appState.diffViewMode === 'split' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright'}"
-              title="Side-by-Side (Split) View"
+              class="flex items-center space-x-1.5 px-2 py-1 bg-gray-100 dark:bg-deck-card hover:bg-gray-200 dark:hover:bg-deck-border/80 border border-deck-border rounded text-xs text-slate-700 dark:text-deck-bright font-mono transition cursor-pointer shadow-xs"
+              title="Switch between Side-by-Side (Split) and Inline (Unified) diff view"
+              aria-haspopup="listbox"
+              aria-expanded={isDiffModeDropdownOpen}
             >
-              <Columns class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline">Split</span>
+              {#if appState.diffViewMode === 'split'}
+                <Columns class="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span>Split</span>
+              {:else}
+                <AlignJustify class="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span>Unified</span>
+              {/if}
+              <ChevronDown class="w-3 h-3 text-slate-400 shrink-0 transition-transform duration-150 {isDiffModeDropdownOpen ? 'rotate-180' : ''}" />
             </button>
-            <button
-              onclick={() => {
-                clearSelection();
-                appState.setDiffViewMode('unified');
-              }}
-              class="px-2 py-0.5 rounded flex items-center space-x-1 transition {appState.diffViewMode === 'unified' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright'}"
-              title="Unified (Inline) View"
-            >
-              <AlignJustify class="w-3.5 h-3.5" />
-              <span class="hidden sm:inline">Unified</span>
-            </button>
+
+            {#if isDiffModeDropdownOpen}
+              <button
+                type="button"
+                class="fixed inset-0 z-40 bg-transparent border-none cursor-default"
+                onclick={() => (isDiffModeDropdownOpen = false)}
+                aria-label="Close diff layout dropdown"
+                tabindex="-1"
+              ></button>
+
+              <div class="absolute top-full right-0 mt-1 w-40 bg-white dark:bg-deck-surface border border-deck-border rounded-lg shadow-xl z-50 py-1 font-sans text-xs animate-in fade-in zoom-in-95 duration-100">
+                <div class="px-2.5 py-1 text-[10px] font-semibold text-slate-400 dark:text-deck-muted uppercase tracking-wider border-b border-deck-border/50 mb-0.5">
+                  Diff Layout
+                </div>
+                <button
+                  type="button"
+                  onclick={() => {
+                    clearSelection();
+                    appState.setDiffViewMode('split');
+                    isDiffModeDropdownOpen = false;
+                  }}
+                  class="w-full px-2.5 py-1.5 text-left flex items-center justify-between hover:bg-slate-100 dark:hover:bg-deck-card transition cursor-pointer {appState.diffViewMode === 'split' ? 'font-semibold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30' : 'text-slate-700 dark:text-deck-text'}"
+                >
+                  <div class="flex items-center space-x-2">
+                    <Columns class="w-3.5 h-3.5 {appState.diffViewMode === 'split' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-deck-muted'}" />
+                    <span>Split</span>
+                  </div>
+                  {#if appState.diffViewMode === 'split'}
+                    <Check class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  {/if}
+                </button>
+                <button
+                  type="button"
+                  onclick={() => {
+                    clearSelection();
+                    appState.setDiffViewMode('unified');
+                    isDiffModeDropdownOpen = false;
+                  }}
+                  class="w-full px-2.5 py-1.5 text-left flex items-center justify-between hover:bg-slate-100 dark:hover:bg-deck-card transition cursor-pointer {appState.diffViewMode === 'unified' ? 'font-semibold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30' : 'text-slate-700 dark:text-deck-text'}"
+                >
+                  <div class="flex items-center space-x-2">
+                    <AlignJustify class="w-3.5 h-3.5 {appState.diffViewMode === 'unified' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-deck-muted'}" />
+                    <span>Unified</span>
+                  </div>
+                  {#if appState.diffViewMode === 'unified'}
+                    <Check class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  {/if}
+                </button>
+              </div>
+            {/if}
           </div>
 
           <!-- Line Wrap Toggle -->
