@@ -43,6 +43,7 @@ struct PtySessionState {
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     running: Arc<AtomicBool>,
+    child_pid: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -196,12 +197,21 @@ async fn main() {
         .route("/api/pty/write", post(write_pty_handler))
         .route("/api/pty/resize", post(resize_pty_handler))
         .route("/api/pty/kill", post(kill_pty_handler))
+        .route("/api/pty/process-info", post(pty_process_info_handler))
         .route("/agent-events", post(agent_events_handler))
         .route("/api/agent-events", post(agent_events_handler))
+        .route("/api/component-picked", post(component_picked_handler))
+        .route("/component-picked", post(component_picked_handler))
+        .route("/api/component-steer", post(component_steer_handler))
+        .route("/component-steer", post(component_steer_handler))
         .route("/api/notifications/desktop", post(desktop_notification_handler))
         .route("/api/integrations", get(get_integrations_handler))
         .route("/api/integrations/install", post(install_integration_handler))
         .route("/api/integrations/uninstall", post(uninstall_integration_handler))
+        .route("/api/preview", axum::routing::any(preview_handler))
+        .route("/proxy/:port", axum::routing::any(proxy_gateway_handler))
+        .route("/proxy/:port/*path", axum::routing::any(proxy_gateway_handler))
+        .fallback(proxy_fallback_handler)
         .route("/ws/pty/:session_id", get(pty_ws_handler))
         .route("/ws/events", get(events_ws_handler))
         .layer(
@@ -618,10 +628,11 @@ async fn spawn_pty_handler(
         }
     }
 
-    let _child = pair
+    let child = pair
         .slave
         .spawn_command(cmd)
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let child_pid = child.process_id();
 
     let writer = pair
         .master
@@ -632,6 +643,7 @@ async fn spawn_pty_handler(
         master: Mutex::new(pair.master),
         writer: Arc::new(Mutex::new(writer)),
         running: Arc::new(AtomicBool::new(true)),
+        child_pid,
     });
 
     ctx.pty_sessions.lock().insert(req.session_id.clone(), session);
@@ -704,6 +716,184 @@ async fn kill_pty_handler(
         session.running.store(false, Ordering::Relaxed);
     }
     Ok(Json(serde_json::json!({ "success": true })))
+}
+
+#[derive(Debug, Deserialize)]
+struct PtyProcessInfoReq {
+    session_id: String,
+}
+
+async fn pty_process_info_handler(
+    State(ctx): State<AppContext>,
+    Json(req): Json<PtyProcessInfoReq>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    let session_opt = {
+        let sessions = ctx.pty_sessions.lock();
+        sessions.get(&req.session_id).cloned()
+    };
+
+    if let Some(session) = session_opt {
+        let child_pid = session.child_pid;
+        if let Some(pid) = child_pid {
+            if let Some((fg_pid, comm, cmdline)) = inspect_foreground_process(pid) {
+                let (is_agent, matched_agent) = match_agent_binary(&comm, &cmdline);
+                return Ok(Json(serde_json::json!({
+                    "session_id": req.session_id,
+                    "pid": fg_pid,
+                    "binary_name": comm,
+                    "cmdline": cmdline,
+                    "is_agent": is_agent,
+                    "matched_agent": matched_agent,
+                })));
+            }
+        }
+        Ok(Json(serde_json::json!({
+            "session_id": req.session_id,
+            "pid": child_pid,
+            "binary_name": "shell",
+            "cmdline": null,
+            "is_agent": false,
+            "matched_agent": null,
+        })))
+    } else {
+        Err((axum::http::StatusCode::NOT_FOUND, "PTY session not found".to_string()))
+    }
+}
+
+pub fn match_agent_binary(comm: &str, cmdline: &str) -> (bool, Option<String>) {
+    const KNOWN_AGENTS: &[(&str, &[&str])] = &[
+        ("claude", &["claude", "claude-code"]),
+        ("antigravity", &["agy", "antigravity", "antigravity-cli"]),
+        ("gemini", &["gemini", "gemini-cli"]),
+        ("cursor", &["cursor", "cursor-agent"]),
+        ("codex", &["codex", "codex-cli"]),
+        ("opencode", &["opencode"]),
+        ("aider", &["aider"]),
+        ("goose", &["goose"]),
+    ];
+
+    let comm_lower = comm.to_lowercase();
+    let cmdline_lower = cmdline.to_lowercase();
+
+    for (agent_name, aliases) in KNOWN_AGENTS {
+        for alias in *aliases {
+            if comm_lower == *alias || comm_lower.ends_with(&format!("/{}", alias)) {
+                return (true, Some(agent_name.to_string()));
+            }
+            if (comm_lower == "node" || comm_lower == "python" || comm_lower == "python3" || comm_lower == "bun" || comm_lower == "deno" || comm_lower == "sh" || comm_lower == "bash" || comm_lower == "zsh" || comm_lower.is_empty())
+                && (cmdline_lower.contains(&format!("/{}", alias)) || cmdline_lower.contains(&format!(" {} ", alias)) || cmdline_lower.starts_with(alias) || cmdline_lower.ends_with(alias) || cmdline_lower.contains(alias))
+            {
+                return (true, Some(agent_name.to_string()));
+            }
+        }
+    }
+
+    (false, None)
+}
+
+fn find_agent_in_tree(pid: u32, depth: u32) -> Option<(u32, String, String)> {
+    if depth > 4 {
+        return None;
+    }
+
+    if let Ok(children_content) = std::fs::read_to_string(format!("/proc/{}/task/{}/children", pid, pid)) {
+        let child_pids: Vec<u32> = children_content
+            .split_whitespace()
+            .filter_map(|s| s.parse::<u32>().ok())
+            .collect();
+
+        // Check if any direct child matches a known agent
+        for &child_pid in child_pids.iter().rev() {
+            let comm = std::fs::read_to_string(format!("/proc/{}/comm", child_pid))
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let cmdline = std::fs::read_to_string(format!("/proc/{}/cmdline", child_pid))
+                .unwrap_or_default()
+                .replace('\0', " ")
+                .trim()
+                .to_string();
+            if !comm.is_empty() {
+                let (is_agent, _) = match_agent_binary(&comm, &cmdline);
+                if is_agent {
+                    return Some((child_pid, comm, cmdline));
+                }
+            }
+        }
+
+        // Search subchildren
+        for &child_pid in child_pids.iter().rev() {
+            if let Some(agent) = find_agent_in_tree(child_pid, depth + 1) {
+                return Some(agent);
+            }
+        }
+    }
+
+    None
+}
+
+pub fn inspect_foreground_process(shell_pid: u32) -> Option<(u32, String, String)> {
+    // 1. Search for any running agent in the process tree of shell_pid
+    if let Some(agent) = find_agent_in_tree(shell_pid, 0) {
+        return Some(agent);
+    }
+
+    // 2. Try reading /proc/<shell_pid>/stat to get tpgid (terminal process group)
+    if let Ok(stat_content) = std::fs::read_to_string(format!("/proc/{}/stat", shell_pid)) {
+        if let Some(after_paren) = stat_content.rfind(')') {
+            let fields: Vec<&str> = stat_content[after_paren + 1..].split_whitespace().collect();
+            // fields[0]=state, [1]=ppid, [2]=pgrp, [3]=session, [4]=tty_nr, [5]=tpgid
+            if fields.len() > 5 {
+                let pgrp = fields[2].parse::<i32>().unwrap_or(0);
+                let tpgid = fields[5].parse::<i32>().unwrap_or(0);
+                if tpgid > 0 && tpgid != pgrp {
+                    let comm = std::fs::read_to_string(format!("/proc/{}/comm", tpgid))
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string();
+                    let cmdline = std::fs::read_to_string(format!("/proc/{}/cmdline", tpgid))
+                        .unwrap_or_default()
+                        .replace('\0', " ")
+                        .trim()
+                        .to_string();
+                    if !comm.is_empty() {
+                        let (is_agent, _) = match_agent_binary(&comm, &cmdline);
+                        if is_agent {
+                            return Some((tpgid as u32, comm, cmdline));
+                        }
+                        if let Some(agent) = find_agent_in_tree(tpgid as u32, 0) {
+                            return Some(agent);
+                        }
+                        return Some((tpgid as u32, comm, cmdline));
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Fallback: inspect direct children of shell_pid for active non-shell task
+    if let Ok(children_content) = std::fs::read_to_string(format!("/proc/{}/task/{}/children", shell_pid, shell_pid)) {
+        let child_pids: Vec<u32> = children_content
+            .split_whitespace()
+            .filter_map(|s| s.parse::<u32>().ok())
+            .collect();
+        for child_pid in child_pids.into_iter().rev() {
+            let comm = std::fs::read_to_string(format!("/proc/{}/comm", child_pid))
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let cmdline = std::fs::read_to_string(format!("/proc/{}/cmdline", child_pid))
+                .unwrap_or_default()
+                .replace('\0', " ")
+                .trim()
+                .to_string();
+            if !comm.is_empty() && comm != "bash" && comm != "zsh" && comm != "sh" && comm != "fish" {
+                return Some((child_pid, comm, cmdline));
+            }
+        }
+    }
+
+    None
 }
 
 async fn pty_ws_handler(
@@ -840,6 +1030,38 @@ async fn agent_events_handler(
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
+async fn component_picked_handler(
+    State(ctx): State<AppContext>,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    println!("[AgentDeck Server] Received component picked event: {:?}", payload);
+    let watcher_tx = ctx.watcher_tx.lock();
+    if let Some(ref tx) = *watcher_tx {
+        let event_payload = serde_json::json!({
+            "event": "agentdeck:component-picked",
+            "data": payload,
+        });
+        let _ = tx.send(event_payload.to_string());
+    }
+    Ok(Json(serde_json::json!({ "status": "ok" })))
+}
+
+async fn component_steer_handler(
+    State(ctx): State<AppContext>,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    println!("[AgentDeck Server] Received component steer event: {:?}", payload);
+    let watcher_tx = ctx.watcher_tx.lock();
+    if let Some(ref tx) = *watcher_tx {
+        let event_payload = serde_json::json!({
+            "event": "agentdeck:steer-component",
+            "data": payload,
+        });
+        let _ = tx.send(event_payload.to_string());
+    }
+    Ok(Json(serde_json::json!({ "status": "ok" })))
+}
+
 #[derive(Debug, Deserialize)]
 struct DesktopNotifReq {
     title: String,
@@ -918,4 +1140,87 @@ async fn uninstall_integration_handler(
         Err((axum::http::StatusCode::BAD_REQUEST, format!("Unsupported agent: {}", req.agent)))
     }
 }
+
+#[path = "../../src-tauri/src/preview.rs"]
+pub mod preview;
+
+async fn proxy_gateway_handler(
+    req: axum::extract::Request,
+) -> axum::response::Response {
+    handle_proxy_request(req).await
+}
+
+async fn proxy_fallback_handler(
+    req: axum::extract::Request,
+) -> axum::response::Response {
+    handle_proxy_request(req).await
+}
+
+async fn preview_handler(
+    req: axum::extract::Request,
+) -> axum::response::Response {
+    handle_proxy_request(req).await
+}
+
+async fn handle_proxy_request(
+    req: axum::extract::Request,
+) -> axum::response::Response {
+    let method = req.method().to_string();
+    let uri_str = req.uri().to_string();
+    let mut headers_vec = Vec::new();
+    for (name, val) in req.headers() {
+        if let Ok(val_str) = val.to_str() {
+            headers_vec.push((name.as_str().to_string(), val_str.to_string()));
+        }
+    }
+
+    let body_bytes = axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap_or_default()
+        .to_vec();
+
+    let (target_port, forward_path) = preview::resolve_request_target_port(&format!("{} {}", method, uri_str), &headers_vec);
+
+    match preview::forward_proxy_request(target_port, &method, &forward_path, &headers_vec, &body_bytes).await {
+        Ok(res) => {
+            let mut builder = axum::response::Response::builder()
+                .status(axum::http::StatusCode::from_u16(res.status_code).unwrap_or(axum::http::StatusCode::OK))
+                .header(axum::http::header::CONTENT_TYPE, res.content_type);
+
+            for (k, v) in res.headers {
+                if !k.eq_ignore_ascii_case("content-type") && !k.eq_ignore_ascii_case("content-length") {
+                    if let (Ok(hk), Ok(hv)) = (axum::http::HeaderName::from_bytes(k.as_bytes()), axum::http::HeaderValue::from_str(&v)) {
+                        builder = builder.header(hk, hv);
+                    }
+                }
+            }
+
+            builder.body(axum::body::Body::from(res.body)).unwrap_or_else(|_| {
+                axum::response::Response::builder()
+                    .status(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(axum::body::Body::empty())
+                    .unwrap()
+            })
+        }
+        Err(err) => {
+            if method == "GET" && (forward_path == "/" || forward_path.ends_with(".html") || !forward_path.contains('.')) {
+                let offline = preview::render_dev_server_offline_html(&format!("http://localhost:{}", target_port));
+                axum::response::Response::builder()
+                    .status(axum::http::StatusCode::OK)
+                    .header(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")
+                    .header(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                    .body(axum::body::Body::from(offline))
+                    .unwrap()
+            } else {
+                axum::response::Response::builder()
+                    .status(axum::http::StatusCode::BAD_GATEWAY)
+                    .header(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")
+                    .header(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                    .body(axum::body::Body::from(format!("Proxy error: {}", err)))
+                    .unwrap()
+            }
+        }
+    }
+}
+
 

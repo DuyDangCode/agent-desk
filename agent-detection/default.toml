@@ -1,0 +1,48 @@
+[agent]
+name = "default"
+binary_names = []
+
+[patterns]
+# 1. Highest Priority: Requires human intervention
+blocked = [
+  "(?i)question\\s+\\d+\\s*[/|of]\\s*\\d+",
+  "(?i)esc\\s+skip",
+  "(?i)write-in(\\.\\.\\.)?",
+  "(?i)enter\\s+select\\s*·\\s*esc\\s+skip",
+  "(?i)approve\\s+(this\\s+action|command|execution|tool|changes?)",
+  "(?i)yes,\\s*(allow|accept|and\\s+always)",
+  "(?i)no,\\s*and\\s+always\\s+deny",
+  "(?i)allow\\s+(tool|execution|creation|this|access|all)",
+  "(?i)allow\\s+.*\\?",
+  "(?i)confirm\\s+to\\s+proceed",
+  "(?i)do you want to (proceed|run|continue)",
+  "(?i)press\\s+1\\s+to\\s+accept\\s+or\\s+2\\s+to\\s+reject",
+  "(?i)press\\s+enter\\s+to\\s+(confirm|continue|submit|return)",
+  "(?i)select\\s+(an?\\s+)?option",
+  "(?i)submit/skip",
+  "(?i)\\[y/N\\]",
+  "(?i)\\(y/n\\)",
+  "(?i)amend\\s+with\\s+feedback",
+  "(?i)is\\s+ready\\s+for\\s+input",
+  "(?i)type\\s+your\\s+(own|response|answer|input)",
+  "(?i)enter\\s+your\\s+(response|answer|input)",
+  "(?i)choose\\s+an?\\s+option",
+  "(?i)permission\\s+(required|needed|request)"
+]
+
+# 2. Medium Priority: Agent is waiting for user input
+idle = [
+  "^❯\\s*$",
+  "^[\\w\\-\\.]+>\\s*$",
+  "^\\?\\s+Type your command",
+  "(?i)enter\\s+a\\s+prompt",
+  "(?i)how\\s+can\\s+i\\s+help"
+]
+
+# 3. Lowest Priority: Active processing/tool calls
+working = [
+  "[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]",
+  "(?i)thinking\\.\\.\\.",
+  "(?i)running\\s+command",
+  "\\d+s\\s+\\|\\s+\\d+\\s+tokens"
+]

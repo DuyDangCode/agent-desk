@@ -472,6 +472,38 @@ class TestAppState {
     }
   }
 
+  addProjectTerminalSession(projectId: string): string {
+    if (projectId === this.activeProjectId) {
+      return this.addTerminalSession();
+    }
+    this.switchProject(projectId);
+    return this.addTerminalSession();
+  }
+
+  closeProjectSession(projectId: string, sessionId: string) {
+    if (projectId === this.activeProjectId) {
+      this.closeSession(sessionId);
+      return;
+    }
+    const project = this.projects.find((p) => p.id === projectId);
+    if (!project || project.sessions.length <= 1) return;
+    project.sessions = project.sessions.filter((s) => s.id !== sessionId);
+    if (project.activeSessionId === sessionId) {
+      project.activeSessionId = project.sessions[0]?.id || '';
+    }
+    if (project.secondarySessionId === sessionId) {
+      project.secondarySessionId = null;
+      project.terminalLayout = 'single';
+    }
+  }
+
+  selectProjectSession(projectId: string, sessionId: string) {
+    if (projectId !== this.activeProjectId) {
+      this.switchProject(projectId);
+    }
+    this.setActiveSession(sessionId);
+  }
+
   mockDirs: Map<string, { path: string; name: string; is_git_repo: boolean }[]> = new Map();
 
   createDirectory(parentPath: string, name: string): string {
@@ -1665,6 +1697,72 @@ describe('Push & Pull Code Loading Toast Notification Lifecycle', () => {
       state.openSettings();
       assert.equal(state.settingsModalOpen, true);
       assert.equal(state.settingsModalTab, 'terminal');
+    });
+
+    describe('Workspace Project Session Management Boundary Tests', () => {
+      it('In-Bound: addProjectTerminalSession adds session to active project', () => {
+        const p1 = state.attachProject('/home/user/proj-alpha');
+        assert.equal(state.activeProjectId, p1);
+        assert.equal(state.sessions.length, 1);
+
+        const newId = state.addProjectTerminalSession(p1);
+        assert.equal(state.sessions.length, 2);
+        assert.equal(state.activeSessionId, newId);
+      });
+
+      it('In-Bound: addProjectTerminalSession switches to target project and adds session', () => {
+        const p1 = state.attachProject('/home/user/proj-alpha');
+        const p2 = state.attachProject('/home/user/proj-beta');
+        assert.equal(state.activeProjectId, p2);
+
+        // Add session to p1 (which is currently not active)
+        const p1NewSessionId = state.addProjectTerminalSession(p1);
+        assert.equal(state.activeProjectId, p1);
+        const proj1 = state.projects.find((p) => p.id === p1);
+        assert.ok(proj1);
+        assert.equal(proj1.sessions.length, 2);
+        assert.equal(proj1.activeSessionId, p1NewSessionId);
+      });
+
+      it('In-Bound: selectProjectSession switches project and activates target session', () => {
+        const p1 = state.attachProject('/home/user/proj-alpha');
+        const s1 = state.sessions[0].id;
+        const s2 = state.addTerminalSession('Alpha Term 2');
+
+        const p2 = state.attachProject('/home/user/proj-beta');
+        assert.equal(state.activeProjectId, p2);
+
+        // Select s1 from p1
+        state.selectProjectSession(p1, s1);
+        assert.equal(state.activeProjectId, p1);
+        assert.equal(state.activeSessionId, s1);
+      });
+
+      it('Lower Boundary: closeProjectSession preserves the only session in project', () => {
+        const p1 = state.attachProject('/home/user/proj-alpha');
+        const p2 = state.attachProject('/home/user/proj-beta');
+        const proj1 = state.projects.find((p) => p.id === p1)!;
+        assert.equal(proj1.sessions.length, 1);
+
+        state.closeProjectSession(p1, proj1.sessions[0].id);
+        assert.equal(proj1.sessions.length, 1);
+      });
+
+      it('Upper Boundary: closeProjectSession in inactive project removes session and cleans up activeSessionId', () => {
+        const p1 = state.attachProject('/home/user/proj-alpha');
+        const s2 = state.addTerminalSession('Term 2');
+        const p2 = state.attachProject('/home/user/proj-beta');
+
+        const proj1 = state.projects.find((p) => p.id === p1)!;
+        assert.equal(proj1.sessions.length, 2);
+        assert.equal(proj1.activeSessionId, s2);
+
+        // Close s2 in inactive project p1
+        state.closeProjectSession(p1, s2);
+        assert.equal(proj1.sessions.length, 1);
+        assert.notEqual(proj1.activeSessionId, s2);
+        assert.equal(proj1.activeSessionId, proj1.sessions[0].id);
+      });
     });
   });
 });

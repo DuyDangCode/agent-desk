@@ -1,0 +1,25 @@
+[agent]
+name = "cursor"
+binary_names = ["cursor", "cursor-agent"]
+
+[patterns]
+blocked = [
+  "(?i)\\[y/N\\]",
+  "(?i)\\(y/n\\)",
+  "(?i)approve\\s+",
+  "(?i)accept\\s+or\\s+reject",
+  "(?i)do you want to run"
+]
+
+idle = [
+  "^❯\\s*$",
+  "^cursor>\\s*$",
+  "^[\\w\\-\\.]+>\\s*$"
+]
+
+working = [
+  "[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]",
+  "(?i)thinking\\.\\.\\.",
+  "(?i)generating\\.\\.\\.",
+  "(?i)running"
+]

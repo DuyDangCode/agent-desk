@@ -1,0 +1,22 @@
+[agent]
+name = "aider"
+binary_names = ["aider"]
+
+[patterns]
+blocked = [
+  "(?i)\\[y/n\\]",
+  "(?i)apply changes\\?",
+  "(?i)run shell command\\?",
+  "(?i)add to git\\?"
+]
+
+idle = [
+  "^aider>\\s*$",
+  "^>\\s*$"
+]
+
+working = [
+  "[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]",
+  "(?i)thinking\\.\\.\\.",
+  "(?i)tokens\\b"
+]

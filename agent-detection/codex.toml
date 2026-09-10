@@ -1,0 +1,23 @@
+[agent]
+name = "codex"
+binary_names = ["codex", "codex-cli"]
+
+[patterns]
+blocked = [
+  "(?i)\\[y/N\\]",
+  "(?i)\\(y/n\\)",
+  "(?i)approve",
+  "(?i)do you want to proceed"
+]
+
+idle = [
+  "^❯\\s*$",
+  "^codex>\\s*$",
+  "^[\\w\\-\\.]+>\\s*$"
+]
+
+working = [
+  "[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]",
+  "(?i)thinking\\.\\.\\.",
+  "(?i)generating\\.\\.\\."
+]

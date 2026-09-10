@@ -8,12 +8,18 @@
   import { appState } from '$lib/stores/appState.svelte';
   import { themeState } from '$lib/stores/theme.svelte';
   import type { AgentKind, TerminalLayout } from '$lib/types';
-  import { detectInteractivePrompt } from '$lib/utils/notifications';
+  import { 
+    extractLiveViewportLines, 
+    evaluateBufferAgainstManifest, 
+    manifestRegistry, 
+    globalAgentStateMachine 
+  } from '$lib/utils/agentDetection';
   import { 
     spawnPty, 
     writePty, 
     resizePty, 
     killPty, 
+    getPtyProcessInfo,
     listenEvent 
   } from '$lib/utils/tauri';
   import { 
@@ -50,6 +56,62 @@
   const sessionInputBuffers = new Map<string, string>();
   const sessionOutputBuffers = new Map<string, string>();
   const lastDetectedPromptMap = new Map<string, number>();
+  const lastProcessCheckMap = new Map<string, number>();
+  const lastBufferEvalMap = new Map<string, number>();
+  let detectionInterval: any = null;
+
+  async function evaluateSessionStatus(sessionId: string, force = false) {
+    const st = terminalMap.get(sessionId);
+    if (!st) return;
+
+    const now = Date.now();
+    if (!force) {
+      const lastEval = lastBufferEvalMap.get(sessionId) || 0;
+      if (now - lastEval < 80) return;
+    }
+    lastBufferEvalMap.set(sessionId, now);
+
+    // Component A: Process Identification (throttled every 1.5s)
+    const lastProc = lastProcessCheckMap.get(sessionId) || 0;
+    const session = appState.allSessions.find((s) => s.id === sessionId);
+
+    if (now - lastProc > 1500) {
+      lastProcessCheckMap.set(sessionId, now);
+      getPtyProcessInfo(sessionId).then((proc) => {
+        if (proc) {
+          appState.updateSessionForegroundProcess(sessionId, proc);
+          if (session) {
+            evaluateSessionStatus(sessionId, true);
+          }
+        }
+      }).catch(() => {});
+    }
+
+    // Component B: Viewport-Independent Screen Buffer Snapshotting (full visible viewport)
+    const maxLines = Math.max(30, st.term.rows || 30);
+    const lines = extractLiveViewportLines(st.term, maxLines);
+    if (lines.length === 0) return;
+
+    // Component C: Declarative Manifest Lookup
+    let binary = session?.detectedBinary || (session?.isAgent ? session.agentKind : '') || '';
+    if (!binary) {
+      const combined = lines.join('\n');
+      if (combined.includes('Antigravity') || combined.includes('agy') || combined.includes('Approve this action?')) {
+        binary = 'antigravity';
+      } else if (combined.includes('Claude Code') || combined.includes('Claude')) {
+        binary = 'claude';
+      } else if (combined.includes('OpenCode') || combined.includes('opencode') || combined.includes('Ask anything')) {
+        binary = 'opencode';
+      }
+    }
+    const manifest = manifestRegistry.getManifestForBinary(binary);
+
+    // Component D: Priority-Based Evaluation Algorithm
+    const evaluation = evaluateBufferAgainstManifest(lines, manifest);
+
+    // Component E: State Machine & Debouncing
+    globalAgentStateMachine.update(sessionId, evaluation, manifest.name);
+  }
 
   let unlistenOutput: (() => void) | null = null;
   let unlistenExit: (() => void) | null = null;
@@ -67,6 +129,7 @@
   // Quick Launch Dropdown State
   let selectedQuickAction = $state<string>('');
   let isQuickLaunchOpen = $state(false);
+  let isSessionDropdownOpen = $state(false);
   let isPane1SessionDropdownOpen = $state(false);
   let isPane2SessionDropdownOpen = $state(false);
 
@@ -889,39 +952,8 @@
             }
           }
 
-          // 3. Robust heuristic: Detect interactive prompt / option selection in PTY output stream
-          const currentBuf = sessionOutputBuffers.get(payload.session_id) || '';
-          const newBuf = (currentBuf + payload.data).slice(-2048);
-          sessionOutputBuffers.set(payload.session_id, newBuf);
-
-          const detected = detectInteractivePrompt(newBuf);
-          if (detected) {
-            const now = Date.now();
-            const lastTime = lastDetectedPromptMap.get(payload.session_id) || 0;
-            // Debounce within 4 seconds per session to prevent alert spam
-            if (now - lastTime > 4000) {
-              lastDetectedPromptMap.set(payload.session_id, now);
-
-              const agentName = (s && s.isAgent && s.agentKind !== 'shell') ? s.agentKind : 'agent';
-              if (s && !s.isAgent) {
-                appState.setSessionAgent(
-                  payload.session_id,
-                  true,
-                  'custom',
-                  s.title.startsWith('Terminal') ? 'AI Agent' : undefined
-                );
-              }
-
-              appState.handleAgentEvent({
-                type: detected.type,
-                agent: agentName,
-                sessionId: payload.session_id,
-                cwd: s?.cwd,
-                message: detected.message,
-                timestamp: now,
-              });
-            }
-          }
+          // 3. Terminal Screen Buffer & Pattern Matching Engine evaluation
+          evaluateSessionStatus(payload.session_id);
         }
       }
     );
@@ -930,7 +962,9 @@
       'pty-exit',
       (payload) => {
         if (payload?.session_id) {
+          globalAgentStateMachine.reset(payload.session_id);
           appState.setSessionAgent(payload.session_id, false, 'shell');
+          appState.setSessionAgentStatus(payload.session_id, null);
           const st = terminalMap.get(payload.session_id);
           if (st) {
             st.term.write(`\r\n\x1b[33m[Process completed with exit code ${payload.exit_code}]\x1b[0m\r\n`, () => {
@@ -944,10 +978,21 @@
       }
     );
 
+    // Start background screen buffer status evaluation polling (every 200ms)
+    detectionInterval = setInterval(() => {
+      for (const sessionId of terminalMap.keys()) {
+        evaluateSessionStatus(sessionId, true);
+      }
+    }, 200);
+
     window.addEventListener('focus-active-terminal', handleFocusActiveTerminal);
   });
 
   onDestroy(() => {
+    if (detectionInterval) {
+      clearInterval(detectionInterval);
+      detectionInterval = null;
+    }
     if (unlistenOutput) unlistenOutput();
     if (unlistenExit) unlistenExit();
     window.removeEventListener('focus-active-terminal', handleFocusActiveTerminal);
@@ -960,130 +1005,228 @@
 
   <!-- Session Tabs Bar, Split Modes, & Quick Actions Header -->
   <div class="h-9 bg-slate-50 dark:bg-deck-surface border-b border-deck-border/60 flex items-center justify-between px-2.5 py-0.5 shrink-0 select-none gap-2 relative z-20">
-    <!-- Scrolling Tabs Container (Shows active project's session tabs) -->
-    <div class="flex-1 min-w-0 overflow-x-auto flex items-center space-x-1 py-0.5 pr-2 no-scrollbar">
-      {#each appState.sessions as session, idx (session.id)}
-        {@const isPrimary = session.id === appState.activeSessionId}
-        {@const isSecondary = appState.terminalLayout !== 'single' && session.id === appState.secondarySessionId}
-        {@const isFocused = (isPrimary && appState.focusedPane === 'primary') || (isSecondary && appState.focusedPane === 'secondary') || (appState.terminalLayout === 'single' && isPrimary)}
-        {@const isEditing = editingSessionId === session.id}
-        {@const hasAttention = Boolean(session.attentionState)}
-        <div
-          class="shrink-0 group relative flex items-center space-x-1.5 px-2.5 py-1 text-xs rounded-md font-mono transition cursor-pointer {hasAttention ? 'ring-2 ring-amber-500 bg-amber-50/90 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 animate-pulse shadow-xs font-semibold' : isFocused ? 'bg-white dark:bg-deck-bg text-slate-900 dark:text-deck-bright shadow-xs font-semibold ring-1 ring-blue-500/40' : isPrimary ? 'bg-slate-100/80 dark:bg-deck-card/60 text-slate-800 dark:text-deck-text' : isSecondary ? 'bg-purple-50/80 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50 dark:text-deck-muted dark:hover:text-deck-bright dark:hover:bg-deck-card/40'}"
-          onclick={() => {
-            appState.setActiveSession(session.id);
-            focusTerminal(session.id);
-          }}
-          ondblclick={(e) => startRenaming(session, e)}
-          role="tab"
-          tabindex="0"
-          aria-selected={isFocused}
-          onkeydown={(e) => {
-            if (e.key === 'Enter') {
-              appState.setActiveSession(session.id);
-              focusTerminal(session.id);
-            }
-          }}
-        >
-          <!-- Split Pane Identifier Pill (P1 in Blue, P2 in Purple) -->
-          {#if appState.terminalLayout !== 'single'}
-            {#if isPrimary}
-              <span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700/60" title="Visible in Pane 1 (Primary)">P1</span>
-            {:else if isSecondary}
-              <span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700/60" title="Visible in Pane 2 (Secondary)">P2</span>
-            {/if}
-          {/if}
+    <!-- Simplified Active Terminal Bar (Terminal tabs managed in Workspaces) -->
+    <div class="flex-1 min-w-0 flex items-center space-x-2 py-0.5">
+      {#if appState.terminalLayout === 'single'}
+        {@const activeSession = appState.activeSession}
+        {#if activeSession}
+          {@const isEditing = editingSessionId === activeSession.id}
 
-          <!-- Tab Index Hotkey Badge (Alt+1..9) -->
-          {#if idx < 9}
-            <span class="text-[9px] font-mono text-slate-400 dark:text-deck-muted/70 px-1 py-0.2 rounded bg-slate-200/50 dark:bg-deck-card" title="Switch tab (Alt+{idx + 1})">
-              {idx + 1}
-            </span>
-          {/if}
-
-          <!-- Attention Badge if Input or Permission Required -->
-          {#if hasAttention}
-            <span
-              class="flex items-center space-x-0.5 px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[9px] font-bold shadow-xs animate-bounce"
-              title={session.attentionMessage || (session.attentionState === 'permission_required' ? 'Permission Required' : 'Input Required')}
-            >
-              <AlertCircle class="w-2.5 h-2.5 shrink-0" />
-              <span>{session.attentionState === 'permission_required' ? 'Permission' : 'Input'}</span>
-            </span>
-          {/if}
-
-          <!-- Agent or Shell Icon Badge -->
-          <button
-            type="button"
-            onclick={(e) => {
-              e.stopPropagation();
-              appState.toggleSessionAgent(session.id);
-            }}
-            class="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-deck-border/60 transition shrink-0"
-            title={session.isAgent ? '🤖 AI Coding Agent Session (Click to close agent status & reset to shell)' : '💻 Standard Shell (Click to mark as AI Agent)'}
-          >
-            {#if session.isAgent}
-              <Bot class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 animate-pulse" />
-            {:else}
-              <TerminalIcon class="w-3.5 h-3.5 text-slate-500 dark:text-deck-muted" />
-            {/if}
-          </button>
-          
-          {#if isEditing}
-            <div class="flex items-center space-x-1" onclick={(e) => e.stopPropagation()} role="presentation">
-              <input
-                type="text"
-                bind:value={editingTitle}
-                class="bg-gray-50 dark:bg-deck-card border border-blue-500 rounded px-1.5 py-0.5 text-xs text-slate-900 dark:text-deck-bright font-mono focus:outline-none w-28 shadow-inner"
-                onkeydown={(e) => handleRenameKeydown(session.id, e)}
-                onblur={() => saveRename(session.id)}
-              />
-              <button
-                onclick={() => saveRename(session.id)}
-                class="p-0.5 hover:bg-gray-200 dark:hover:bg-deck-border rounded text-emerald-600 dark:text-emerald-400 cursor-pointer"
-                title="Save title"
-              >
-                <Check class="w-3 h-3" />
-              </button>
-            </div>
-          {:else}
-            <span class="truncate max-w-[130px] text-slate-900 dark:text-deck-bright" title="Double-click to rename">{session.title}</span>
-
-            <!-- Edit Button on Hover -->
+          <div class="flex items-center space-x-2 min-w-0">
+            <!-- Agent or Shell Icon Badge -->
             <button
-              onclick={(e) => startRenaming(session, e)}
-              class="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 dark:hover:bg-deck-border rounded text-slate-400 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright transition cursor-pointer"
-              title="Rename tab"
+              type="button"
+              onclick={() => appState.toggleSessionAgent(activeSession.id)}
+              class="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-deck-border/60 transition shrink-0 cursor-pointer"
+              title={activeSession.isAgent ? '🤖 AI Coding Agent Session (Click to reset to shell)' : '💻 Standard Shell (Click to mark as AI Agent)'}
             >
-              <Edit2 class="w-2.5 h-2.5" />
+              {#if activeSession.isAgent}
+                <Bot class="w-4 h-4 text-purple-600 dark:text-purple-400 {activeSession.agentStatus === 'working' ? 'animate-pulse' : ''}" />
+              {:else}
+                <TerminalIcon class="w-4 h-4 text-slate-500 dark:text-deck-muted" />
+              {/if}
             </button>
 
-            <!-- Close Tab Button -->
-            {#if appState.sessions.length > 1}
-              <button
-                class="p-0.5 hover:bg-gray-200 dark:hover:bg-deck-border rounded text-slate-400 hover:text-rose-600 dark:text-deck-muted dark:hover:text-rose-400 transition ml-0.5 cursor-pointer"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  appState.closeSession(session.id);
-                }}
-                title="Close terminal (Ctrl+Shift+W)"
+            <!-- Active Session Title (Editable inline) -->
+            {#if isEditing}
+              <div class="flex items-center space-x-1" onclick={(e) => e.stopPropagation()} role="presentation">
+                <input
+                  type="text"
+                  bind:value={editingTitle}
+                  class="bg-gray-50 dark:bg-deck-card border border-blue-500 rounded px-1.5 py-0.5 text-xs text-slate-900 dark:text-deck-bright font-mono focus:outline-none w-36 shadow-inner"
+                  onkeydown={(e) => handleRenameKeydown(activeSession.id, e)}
+                  onblur={() => saveRename(activeSession.id)}
+                />
+                <button
+                  onclick={() => saveRename(activeSession.id)}
+                  class="p-0.5 hover:bg-gray-200 dark:hover:bg-deck-border rounded text-emerald-600 dark:text-emerald-400 cursor-pointer"
+                  title="Save title"
+                >
+                  <Check class="w-3 h-3" />
+                </button>
+              </div>
+            {:else}
+              <span
+                class="font-mono text-xs font-semibold text-slate-900 dark:text-deck-bright truncate max-w-[220px] cursor-pointer"
+                ondblclick={(e) => startRenaming(activeSession, e)}
+                title="{activeSession.title} (Double-click to rename)"
               >
-                <X class="w-3 h-3" />
+                {activeSession.title}
+              </span>
+              <button
+                onclick={(e) => startRenaming(activeSession, e)}
+                class="p-0.5 hover:bg-gray-200 dark:hover:bg-deck-border rounded text-slate-400 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright transition cursor-pointer"
+                title="Rename tab"
+              >
+                <Edit2 class="w-2.5 h-2.5" />
               </button>
             {/if}
-          {/if}
-        </div>
-      {/each}
 
-      <!-- Add New Terminal Tab Button (Targeting Focused Pane) -->
-      <button
-        onclick={() => appState.addTerminalSession()}
-        class="shrink-0 p-1 px-2 rounded bg-gray-100 dark:bg-deck-card/70 hover:bg-gray-200 dark:hover:bg-deck-border/80 border border-deck-border/50 text-slate-700 hover:text-slate-900 dark:text-deck-text dark:hover:text-deck-bright transition flex items-center space-x-1 text-xs cursor-pointer shadow-xs"
-        title="Open new terminal in active pane (Ctrl+Shift+`)"
-      >
-        <Plus class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-        <span class="text-xs font-mono font-medium">New Tab</span>
-      </button>
+            <!-- Status Badge -->
+            {#if activeSession.agentStatus === 'blocked' || activeSession.attentionState}
+              <span
+                class="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-500 text-white shadow-xs animate-bounce flex items-center space-x-1 shrink-0"
+                title="Agent Blocked: Waiting for user approval/input"
+              >
+                <AlertCircle class="w-2.5 h-2.5 shrink-0" />
+                <span>Blocked</span>
+              </span>
+            {:else if activeSession.agentStatus === 'working'}
+              <span
+                class="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 flex items-center space-x-1.5 shrink-0"
+                title="Agent Working: Processing command or tool call"
+              >
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-500 dark:bg-blue-400 animate-ping shrink-0"></span>
+                <span>Working</span>
+              </span>
+            {:else if activeSession.agentStatus === 'idle' && activeSession.isAgent}
+              <span
+                class="px-2 py-0.5 rounded-full text-[10px] font-medium font-mono bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 shrink-0"
+                title="Agent Idle: Waiting at prompt"
+              >
+                <span>Idle</span>
+              </span>
+            {/if}
+
+            <!-- Quick Session Switcher Dropdown (convenience when sidebar collapsed) -->
+            {#if appState.sessions.length > 1}
+              <div class="relative">
+                <button
+                  type="button"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    isSessionDropdownOpen = !isSessionDropdownOpen;
+                  }}
+                  class="flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-200/60 dark:bg-deck-card text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright transition cursor-pointer"
+                  title="Switch session ({appState.sessions.findIndex((s) => s.id === activeSession.id) + 1} of {appState.sessions.length})"
+                  aria-haspopup="listbox"
+                  aria-expanded={isSessionDropdownOpen}
+                >
+                  <span>{appState.sessions.findIndex((s) => s.id === activeSession.id) + 1}/{appState.sessions.length}</span>
+                  <ChevronDown class="w-2.5 h-2.5 transition-transform duration-150 {isSessionDropdownOpen ? 'rotate-180' : ''}" />
+                </button>
+
+                {#if isSessionDropdownOpen}
+                  <button
+                    type="button"
+                    class="fixed inset-0 z-40 cursor-default"
+                    onclick={() => (isSessionDropdownOpen = false)}
+                    aria-label="Close session dropdown"
+                    tabindex="-1"
+                  ></button>
+                  <div class="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-deck-surface border border-deck-border rounded-lg shadow-xl z-50 py-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100">
+                    <div class="px-2.5 py-1 text-[10px] font-sans font-semibold text-slate-400 dark:text-deck-muted uppercase tracking-wider border-b border-deck-border/50 mb-0.5">
+                      Switch Terminal
+                    </div>
+                    <div class="max-h-60 overflow-y-auto">
+                      {#each appState.sessions as s, sIdx (s.id)}
+                        <button
+                          type="button"
+                          onclick={() => {
+                            appState.setActiveSession(s.id);
+                            focusTerminal(s.id);
+                            isSessionDropdownOpen = false;
+                          }}
+                          class="w-full px-2.5 py-1.5 text-left flex items-center justify-between hover:bg-slate-100 dark:hover:bg-deck-card transition cursor-pointer {s.id === activeSession.id ? 'font-semibold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30' : 'text-slate-700 dark:text-deck-text'}"
+                        >
+                          <div class="flex items-center space-x-1.5 min-w-0 truncate flex-1">
+                            {#if s.isAgent}
+                              <Bot class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                            {:else}
+                              <TerminalIcon class="w-3.5 h-3.5 text-slate-400 dark:text-deck-muted shrink-0" />
+                            {/if}
+                            <span class="truncate">{sIdx + 1}. {s.title}</span>
+                          </div>
+                          <div class="flex items-center space-x-1 shrink-0 ml-1.5">
+                            {#if s.agentStatus === 'working'}
+                              <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping shrink-0" title="Working"></span>
+                            {:else if s.agentStatus === 'blocked'}
+                              <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-bounce shrink-0" title="Blocked"></span>
+                            {/if}
+                            {#if s.id === activeSession.id}
+                              <Check class="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                            {/if}
+                          </div>
+                        </button>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+
+            <!-- Quick Add Tab Button -->
+            <button
+              onclick={() => appState.addTerminalSession()}
+              class="p-1 rounded hover:bg-slate-200 dark:hover:bg-deck-border/60 text-slate-500 hover:text-blue-600 dark:text-deck-muted dark:hover:text-blue-400 transition cursor-pointer shrink-0 ml-1"
+              title="Add terminal tab (Ctrl+Shift+`)"
+              aria-label="New Tab"
+            >
+              <Plus class="w-3.5 h-3.5" />
+            </button>
+          </div>
+        {/if}
+      {:else}
+        <!-- Split Mode Panes Indicator -->
+        {@const p1Session = appState.sessions.find((s) => s.id === appState.activeSessionId)}
+        {@const p2Session = appState.sessions.find((s) => s.id === appState.secondarySessionId)}
+        <div class="flex items-center space-x-2 min-w-0 text-xs font-mono">
+          <!-- Pane 1 (Primary) -->
+          {#if p1Session}
+            <button
+              type="button"
+              onclick={() => {
+                appState.focusedPane = 'primary';
+                focusTerminal(p1Session.id);
+              }}
+              class="flex items-center space-x-1.5 px-2 py-0.5 rounded-md border transition cursor-pointer {appState.focusedPane === 'primary' ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-500/50 text-blue-700 dark:text-blue-300 font-semibold shadow-xs' : 'border-transparent text-slate-500 dark:text-deck-muted hover:bg-slate-200/50'}"
+              title="Focus Pane 1 (P1)"
+            >
+              <span class="px-1 py-0.2 rounded text-[9px] font-bold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">P1</span>
+              <span class="truncate max-w-[110px]">{p1Session.title}</span>
+              {#if p1Session.agentStatus === 'working'}
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping shrink-0"></span>
+              {:else if p1Session.agentStatus === 'blocked'}
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-bounce shrink-0"></span>
+              {/if}
+            </button>
+          {/if}
+
+          <!-- Separator -->
+          <span class="text-slate-300 dark:text-deck-border">/</span>
+
+          <!-- Pane 2 (Secondary) -->
+          {#if p2Session}
+            <button
+              type="button"
+              onclick={() => {
+                appState.focusedPane = 'secondary';
+                focusTerminal(p2Session.id);
+              }}
+              class="flex items-center space-x-1.5 px-2 py-0.5 rounded-md border transition cursor-pointer {appState.focusedPane === 'secondary' ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-500/50 text-purple-700 dark:text-purple-300 font-semibold shadow-xs' : 'border-transparent text-slate-500 dark:text-deck-muted hover:bg-slate-200/50'}"
+              title="Focus Pane 2 (P2)"
+            >
+              <span class="px-1 py-0.2 rounded text-[9px] font-bold bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300">P2</span>
+              <span class="truncate max-w-[110px]">{p2Session.title}</span>
+              {#if p2Session.agentStatus === 'working'}
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping shrink-0"></span>
+              {:else if p2Session.agentStatus === 'blocked'}
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-bounce shrink-0"></span>
+              {/if}
+            </button>
+          {/if}
+
+          <!-- Quick Add Tab Button -->
+          <button
+            onclick={() => appState.addTerminalSession()}
+            class="p-1 rounded hover:bg-slate-200 dark:hover:bg-deck-border/60 text-slate-500 hover:text-blue-600 dark:text-deck-muted dark:hover:text-blue-400 transition cursor-pointer shrink-0"
+            title="Add terminal tab (Ctrl+Shift+`)"
+            aria-label="New Tab"
+          >
+            <Plus class="w-3.5 h-3.5" />
+          </button>
+        </div>
+      {/if}
     </div>
 
     <!-- Right Controls: Split Layout Switcher & Quick Launch Dropdown -->

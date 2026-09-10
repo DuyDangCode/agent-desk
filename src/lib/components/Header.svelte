@@ -62,9 +62,9 @@
     </button>
 
     <!-- Minimal Brand Logo -->
-    <div class="flex items-center space-x-1.5 text-blue-600 dark:text-blue-400 font-bold text-xs tracking-tight">
-      <Sparkles class="w-3.5 h-3.5" />
-      <span class="hidden sm:inline">AgentDeck</span>
+    <div class="flex items-center space-x-2 font-bold text-xs tracking-tight">
+      <img src="/kestrel-icon.png" alt="Kestrel" class="w-5 h-5 object-contain select-none" />
+      <span class="text-slate-900 dark:text-deck-bright font-semibold hidden sm:inline">Kestrel</span>
     </div>
 
     <div class="h-4 w-px bg-deck-border/70 hidden sm:block"></div>

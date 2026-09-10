@@ -1,0 +1,56 @@
+[agent]
+name = "antigravity"
+binary_names = ["agy", "antigravity", "antigravity-cli"]
+
+[patterns]
+# 1. Highest Priority: Requires human input or permission
+blocked = [
+  "(?i)question\\s+\\d+\\s*[/|of]\\s*\\d+",
+  "(?i)esc\\s+skip",
+  "(?i)write-in(\\.\\.\\.)?",
+  "(?i)enter\\s+select\\s*·\\s*esc\\s+skip",
+  "(?i)approve\\s+(this\\s+action|command|execution|tool|changes?)",
+  "(?i)yes,\\s*(allow|accept|and\\s+always)",
+  "(?i)no,\\s*and\\s+always\\s+deny",
+  "(?i)allow\\s+(tool|execution|creation|this|access|all)",
+  "(?i)allow\\s+.*\\?",
+  "(?i)confirm\\s+to\\s+proceed",
+  "(?i)do you want to proceed\\?",
+  "(?i)would you like to (proceed|run|continue)",
+  "(?i)press\\s+1\\s+to\\s+accept\\s+or\\s+2\\s+to\\s+reject",
+  "(?i)amend\\s+with\\s+feedback",
+  "(?i)select\\s+an?\\s+option",
+  "(?i)submit/skip",
+  "(?i)\\[y/N\\]",
+  "(?i)\\(y/n\\)",
+  "(?i)press\\s+enter\\s+to\\s+(confirm|continue|submit)",
+  "(?i)is\\s+ready\\s+for\\s+input",
+  "(?i)delete\\?\\s*\\(",
+  "(?i)permission\\s+(required|needed|request)",
+  "(?i)ask_question",
+  "(?i)type\\s+your\\s+(own|response|answer|input)",
+  "(?i)enter\\s+your\\s+(response|answer|input)",
+  "(?i)type\\s+a\\s+number",
+  "(?i)choose\\s+an?\\s+option"
+]
+
+# 2. Medium Priority: Agent is waiting for a new user prompt
+idle = [
+  "^❯\\s*$",
+  "^agy>\\s*$",
+  "^[\\w\\-\\.]+>\\s*$",
+  "(?i)enter\\s+a\\s+prompt",
+  "(?i)how\\s+can\\s+i\\s+help",
+  "(?i)type\\s+a\\s+message"
+]
+
+# 3. Lowest Priority: Active processing/tool calls
+working = [
+  "[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]",
+  "(?i)thinking\\.\\.\\.",
+  "(?i)running\\s+command",
+  "(?i)working\\.\\.\\.",
+  "(?i)executing",
+  "(?i)generating\\.\\.\\.",
+  "\\d+s\\s+\\|\\s+\\d+\\s+tokens"
+]

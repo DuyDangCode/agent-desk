@@ -90,10 +90,19 @@
         <span class="hidden md:inline">{alertSess?.title || 'Agent'}: Attention Required</span>
       </button>
     {:else if hasAgents}
-      <div class="flex items-center space-x-1 text-purple-600 dark:text-purple-400 shrink-0 font-medium animate-pulse" title="AI Coding Agent active">
-        <Bot class="w-3 h-3" />
-        <span class="hidden md:inline">{appState.agentSessions.length} Agent Active</span>
-      </div>
+      {@const workingAgents = appState.agentSessions.filter((s) => s.agentStatus === 'working')}
+      {#if workingAgents.length > 0}
+        <div class="flex items-center space-x-1.5 text-blue-600 dark:text-blue-400 shrink-0 font-medium" title="AI Coding Agent working">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-500 dark:bg-blue-400 animate-ping shrink-0"></span>
+          <Bot class="w-3 h-3 text-blue-500 shrink-0" />
+          <span class="hidden md:inline">{workingAgents[0].title}: Working</span>
+        </div>
+      {:else}
+        <div class="flex items-center space-x-1 text-purple-600 dark:text-purple-400 shrink-0 font-medium" title="AI Coding Agent active">
+          <Bot class="w-3 h-3 text-purple-500 shrink-0" />
+          <span class="hidden md:inline">{appState.agentSessions.length} Agent Active</span>
+        </div>
+      {/if}
     {/if}
   </div>
 

@@ -1,4 +1,4 @@
-import type { RepoInfo, RepoDiffData, CommitResult, DirectoryListing, BranchInfo, StashInfo, AgentIntegrationInfo } from '$lib/types';
+import type { RepoInfo, RepoDiffData, CommitResult, DirectoryListing, BranchInfo, StashInfo, AgentIntegrationInfo, PtyProcessInfo } from '$lib/types';
 
 const SERVER_BASE = 'http://127.0.0.1:4020';
 const WS_BASE = 'ws://127.0.0.1:4020';
@@ -79,6 +79,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     write_pty: { url: `${SERVER_BASE}/api/pty/write`, method: 'POST' },
     resize_pty: { url: `${SERVER_BASE}/api/pty/resize`, method: 'POST' },
     kill_pty: { url: `${SERVER_BASE}/api/pty/kill`, method: 'POST' },
+    get_pty_process_info: { url: `${SERVER_BASE}/api/pty/process-info`, method: 'POST' },
     create_directory: { url: `${SERVER_BASE}/api/fs/create-dir`, method: 'POST' },
     init_repository: { url: `${SERVER_BASE}/api/repo/init`, method: 'POST' },
     read_file_content: { url: `${SERVER_BASE}/api/fs/read-file`, method: 'POST' },
@@ -391,6 +392,15 @@ export async function killPty(sessionId: string): Promise<void> {
   return invoke<void>('kill_pty', { session_id: sessionId, sessionId });
 }
 
+export async function getPtyProcessInfo(sessionId: string): Promise<PtyProcessInfo | null> {
+  try {
+    return await invoke<PtyProcessInfo>('get_pty_process_info', { session_id: sessionId, sessionId });
+  } catch (e) {
+    console.debug('[tauri.ts] getPtyProcessInfo error:', e);
+    return null;
+  }
+}
+
 export async function showDesktopNotification(title: string, body: string, urgency?: string): Promise<void> {
   return invoke<void>('show_desktop_notification', { title, body, urgency });
 }
@@ -415,3 +425,89 @@ export async function uninstallAgentIntegration(agent: string): Promise<AgentInt
   return invoke<AgentIntegrationInfo>('uninstall_agent_integration', { agent });
 }
 
+export interface PreviewPageResult {
+  success: boolean;
+  statusCode: number;
+  contentType: string;
+  body: string;
+  finalUrl: string;
+  error?: string;
+}
+
+export async function fetchPreviewPage(url: string): Promise<PreviewPageResult> {
+  if (isTauri()) {
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    return tauriInvoke<PreviewPageResult>('fetch_preview_page', { url });
+  }
+
+  const res = await fetch(`${SERVER_BASE}/api/preview?url=${encodeURIComponent(url)}`);
+  const text = await res.text();
+  const contentType = res.headers.get('content-type') || 'text/html';
+  return {
+    success: res.ok,
+    statusCode: res.status,
+    contentType,
+    body: text,
+    finalUrl: url,
+    error: res.ok ? undefined : `HTTP error ${res.status}`
+  };
+}
+
+export async function openNativePreviewWindow(url: string): Promise<void> {
+  if (isTauri()) {
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    await tauriInvoke('open_native_preview_window', { url });
+  } else {
+    window.open(url, '_blank', 'width=1200,height=800,resizable=yes');
+  }
+}
+
+export async function closeNativePreviewWindow(): Promise<void> {
+  if (isTauri()) {
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    await tauriInvoke('close_native_preview_window');
+  }
+}
+
+export async function isNativePreviewOpen(): Promise<boolean> {
+  if (isTauri()) {
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    return tauriInvoke<boolean>('is_native_preview_open');
+  }
+  return false;
+}
+
+export async function focusNativePreviewWindow(): Promise<void> {
+  if (isTauri()) {
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    await tauriInvoke('focus_native_preview_window');
+  }
+}
+
+export async function reloadNativePreviewWindow(): Promise<void> {
+  if (isTauri()) {
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    await tauriInvoke('reload_native_preview_window');
+  }
+}
+
+export async function setNativePreviewInspect(enabled: boolean): Promise<void> {
+  if (isTauri()) {
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    await tauriInvoke('set_native_preview_inspect', { enabled });
+  }
+}
+
+export async function closeNativeSteerPopup(): Promise<void> {
+  if (isTauri()) {
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    await tauriInvoke('close_native_steer_popup');
+  }
+}
+
+export async function steerSelectedComponent(meta: unknown, instruction: string): Promise<void> {
+  if (isTauri()) {
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    await tauriInvoke('steer_selected_component', { meta, instruction });
+  }
+}

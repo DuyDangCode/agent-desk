@@ -1,0 +1,37 @@
+[agent]
+name = "claude-code"
+binary_names = ["claude", "claude-code"]
+
+[patterns]
+# 1. Highest Priority: Requires human intervention / tool confirmation
+blocked = [
+  "(?i)approve\\s+(command|execution)",
+  "(?i)\\[y/N\\]",
+  "(?i)\\(y/n\\)",
+  "(?i)allow\\s+.*\\?",
+  "(?i)do you want to proceed\\?",
+  "(?i)would you like to (run|proceed)",
+  "(?i)press enter to confirm",
+  "(?i)select an? option",
+  "(?i)permission\\s+to\\s+run",
+  "(?i)confirm\\s+(changes|action)"
+]
+
+# 2. Medium Priority: Agent is waiting for user input at prompt
+idle = [
+  "^❯\\s*$",
+  "^[\\w\\-\\.]+>\\s*$",
+  "^\\?\\s+Type your command",
+  "^\\s*╭─",
+  "^Claude Code v[0-9]"
+]
+
+# 3. Lowest Priority: Active processing / tool calls / spinners
+working = [
+  "[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]",
+  "(?i)thinking\\.\\.\\.",
+  "(?i)running\\s+command",
+  "\\d+s\\s+\\|\\s+\\d+\\s+tokens",
+  "(?i)executing",
+  "(?i)searching\\.\\.\\."
+]

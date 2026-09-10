@@ -1,0 +1,39 @@
+[agent]
+name = "opencode"
+binary_names = ["opencode"]
+
+# 1. Highest Priority: Requires user permission or approval
+blocked = [
+  "(?i)allow\\s+once",
+  "(?i)always\\s+allow",
+  "(?i)allow\\s+.*\\?",
+  "(?i)approve",
+  "(?i)permission\\s+(required|needed|request)",
+  "(?i)do you want to (allow|proceed|run)",
+  "(?i)\\[y/N\\]",
+  "(?i)\\(y/n\\)",
+  "(?i)reject"
+]
+
+# 2. Medium Priority: Agent is waiting for user prompt in TUI
+idle = [
+  "(?i)ask\\s+anything",
+  "(?i)tab\\s+agents",
+  "(?i)ctrl\\+p\\s+commands",
+  "(?i)tip\\s+run\\s+opencode",
+  "^opencode>\\s*$",
+  "^❯\\s*$",
+  "^[\\w\\-\\.]+>\\s*$"
+]
+
+# 3. Lowest Priority: Active streaming, thinking, or tool execution
+working = [
+  "[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]",
+  "(?i)thinking",
+  "(?i)reasoning",
+  "(?i)executing",
+  "(?i)running\\s+(tool|command|bash|subagent)?",
+  "(?i)applying\\s+patch",
+  "(?i)esc\\s+to\\s+(interrupt|stop|cancel)",
+  "\\d+s\\s+\\|"
+]

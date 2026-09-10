@@ -1,14 +1,18 @@
 <script lang="ts">
   import { appState } from '$lib/stores/appState.svelte';
   import { themeState } from '$lib/stores/theme.svelte';
+  import type { ProjectItem } from '$lib/types';
   import { 
     FolderGit2, 
     Plus, 
     X, 
-    GitBranch, 
     Bot, 
     ChevronLeft, 
     ChevronRight,
+    ChevronDown,
+    Terminal as TerminalIcon,
+    Edit2,
+    Check,
     Settings,
     Sun,
     Moon,
@@ -16,6 +20,29 @@
     Layers,
     AlertCircle
   } from 'lucide-svelte';
+
+  let collapsedProjects = $state<Record<string, boolean>>({});
+  let editingSessionId = $state<string | null>(null);
+  let editingTitle = $state<string>('');
+
+  function isProjectExpanded(projectId: string): boolean {
+    if (projectId in collapsedProjects) {
+      return !collapsedProjects[projectId];
+    }
+    return true; // Expanded by default
+  }
+
+  function toggleProjectCollapse(projectId: string, e?: Event) {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const currentlyExpanded = isProjectExpanded(projectId);
+    collapsedProjects = {
+      ...collapsedProjects,
+      [projectId]: currentlyExpanded
+    };
+  }
 
   function cycleTheme() {
     if (themeState.mode === 'black' || themeState.mode === 'dark') {
@@ -32,10 +59,62 @@
 
   function handleSelectProject(projectId: string) {
     appState.switchProject(projectId);
+    // Auto-expand active project
+    collapsedProjects = {
+      ...collapsedProjects,
+      [projectId]: false
+    };
     if (appState.mobileSidebarOpen) {
       appState.toggleMobileSidebar(false);
     }
   }
+
+  function handleSelectSession(projectId: string, sessionId: string, e?: Event) {
+    if (e) e.stopPropagation();
+    appState.selectProjectSession(projectId, sessionId);
+    if (appState.mobileSidebarOpen) {
+      appState.toggleMobileSidebar(false);
+    }
+  }
+
+  function handleAddSession(projectId: string, e?: Event) {
+    if (e) e.stopPropagation();
+    collapsedProjects = {
+      ...collapsedProjects,
+      [projectId]: false
+    };
+    appState.addProjectTerminalSession(projectId);
+    if (appState.mobileSidebarOpen) {
+      appState.toggleMobileSidebar(false);
+    }
+  }
+
+  function handleCloseSession(projectId: string, sessionId: string, e?: Event) {
+    if (e) e.stopPropagation();
+    appState.closeProjectSession(projectId, sessionId);
+  }
+
+  function startRenaming(session: { id: string; title: string }, e?: Event) {
+    if (e) e.stopPropagation();
+    editingSessionId = session.id;
+    editingTitle = session.title;
+  }
+
+  function saveRename(sessionId: string) {
+    if (editingTitle.trim()) {
+      appState.renameSession(sessionId, editingTitle.trim());
+    }
+    editingSessionId = null;
+  }
+
+  function handleRenameKeydown(sessionId: string, e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      saveRename(sessionId);
+    } else if (e.key === 'Escape') {
+      editingSessionId = null;
+    }
+  }
+
 
   function handleAddProject() {
     appState.openFolderPicker();
@@ -101,95 +180,210 @@
 
       {#each appState.projects as project, idx (project.id)}
         {@const isActive = project.id === appState.activeProjectId}
-        {@const hasAgents = project.sessions.some((s) => s.isAgent)}
-        {@const needsAttention = appState.isProjectAttentionRequired(project.id)}
         {@const stagedCount = project.info?.staged_count || 0}
         {@const unstagedCount = project.info?.unstaged_count || 0}
-        {@const isDirty = (project.info?.staged_count || 0) + (project.info?.unstaged_count || 0) + (project.info?.untracked_count || 0) > 0}
+        {@const totalChanges = stagedCount + unstagedCount}
+        {@const isExpanded = isProjectExpanded(project.id)}
 
-        <div
-          class="group relative flex items-center justify-between px-2.5 py-2 rounded-lg text-xs transition cursor-pointer border {needsAttention ? 'border-amber-500/70 bg-amber-50/50 dark:bg-amber-950/30' : isActive ? 'bg-white dark:bg-deck-bg text-slate-900 dark:text-deck-bright border-blue-500/50 shadow-xs font-medium' : 'text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright hover:bg-slate-200/60 dark:hover:bg-deck-card/70 border-transparent'}"
-          onclick={() => handleSelectProject(project.id)}
-          role="button"
-          tabindex="0"
-          onkeydown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') handleSelectProject(project.id);
-          }}
-        >
-          <!-- Active left indicator bar -->
-          {#if isActive}
-            <span class="absolute left-0 top-1.5 bottom-1.5 w-1 bg-blue-600 dark:bg-blue-400 rounded-r-full"></span>
-          {/if}
+        <div class="space-y-0.5">
+          <!-- Project Header Row (Tree Group Header) -->
+          <div
+            class="group relative flex items-center justify-between px-1.5 py-1 rounded-md text-xs transition cursor-pointer {isActive ? 'text-slate-900 dark:text-deck-bright font-medium bg-slate-200/50 dark:bg-deck-card/50' : 'text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright hover:bg-slate-200/40 dark:hover:bg-deck-card/30'}"
+            onclick={() => handleSelectProject(project.id)}
+            role="button"
+            tabindex="0"
+            onkeydown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') handleSelectProject(project.id);
+            }}
+          >
+            <!-- Left: Chevron, Icon, Project Name -->
+            <div class="flex items-center space-x-1 min-w-0 flex-1 pr-1">
+              <button
+                type="button"
+                onclick={(e) => toggleProjectCollapse(project.id, e)}
+                class="p-0.5 rounded text-slate-400 hover:text-slate-800 dark:text-deck-muted dark:hover:text-deck-bright transition shrink-0 cursor-pointer"
+                title={isExpanded ? 'Collapse' : 'Expand'}
+                aria-label={isExpanded ? 'Collapse' : 'Expand'}
+              >
+                {#if isExpanded}
+                  <ChevronDown class="w-3.5 h-3.5" />
+                {:else}
+                  <ChevronRight class="w-3.5 h-3.5" />
+                {/if}
+              </button>
 
-          <!-- Project Details -->
-          <div class="flex items-center space-x-2 min-w-0 flex-1 pr-1.5">
-            <FolderGit2 class="w-3.5 h-3.5 shrink-0 {needsAttention ? 'text-amber-500' : isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-deck-muted'}" />
+              <FolderGit2 class="w-3.5 h-3.5 shrink-0 {isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-deck-muted'}" />
 
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center space-x-1.5">
-                <span class="truncate font-semibold {isActive ? 'text-slate-900 dark:text-deck-bright' : ''}" title={project.path}>
-                  {project.name}
+              <span class="truncate {isActive ? 'text-slate-900 dark:text-deck-bright font-medium' : ''}" title={project.path}>
+                {project.name}
+              </span>
+            </div>
+
+            <!-- Right: Diff Count & Hover Quick Actions -->
+            <div class="flex items-center space-x-1 shrink-0">
+              {#if totalChanges > 0}
+                <span class="text-[11px] font-mono text-slate-400 dark:text-deck-muted group-hover:hidden transition-opacity" title="{stagedCount} staged, {unstagedCount} modified">
+                  +{totalChanges}
                 </span>
+              {/if}
 
-                {#if idx < 9}
-                  <span class="text-[9px] font-mono text-slate-400 dark:text-deck-muted/70 px-1 rounded bg-slate-200 dark:bg-deck-card shrink-0" title="Ctrl+{idx + 1}">
-                    {idx + 1}
-                  </span>
-                {/if}
-              </div>
-
-              <!-- Secondary Row: Git Branch & Agents -->
-              <div class="flex items-center space-x-1.5 pt-0.5 text-[10px] font-mono">
-                {#if project.info?.branch}
-                  <span class="truncate max-w-[90px] text-blue-600 dark:text-blue-400 flex items-center space-x-0.5">
-                    <GitBranch class="w-2.5 h-2.5 shrink-0 inline" />
-                    <span class="truncate">{project.info.branch}</span>
-                  </span>
-                {/if}
-
-                {#if needsAttention}
-                  <span class="flex items-center space-x-0.5 text-amber-600 dark:text-amber-400 font-semibold" title="Agent requires user input/permission">
-                    <AlertCircle class="w-2.5 h-2.5 animate-bounce" />
-                    <span>Attention</span>
-                  </span>
-                {:else if hasAgents}
-                  <span class="flex items-center space-x-0.5 text-purple-600 dark:text-purple-400 font-semibold" title="AI Agent Running">
-                    <Bot class="w-2.5 h-2.5 animate-pulse" />
-                    <span>Agent</span>
-                  </span>
-                {/if}
+              <!-- Quick Actions on hover -->
+              <div class="hidden group-hover:flex items-center space-x-0.5">
+                <button
+                  type="button"
+                  onclick={(e) => handleAddSession(project.id, e)}
+                  class="p-0.5 rounded text-slate-400 hover:text-blue-600 dark:text-deck-muted dark:hover:text-blue-400 hover:bg-slate-200 dark:hover:bg-deck-card transition cursor-pointer"
+                  title="New Terminal (+)"
+                  aria-label="New Terminal"
+                >
+                  <Plus class="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    appState.closeProject(project.id);
+                  }}
+                  class="p-0.5 rounded text-slate-400 hover:text-rose-600 dark:text-deck-muted dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-deck-card transition cursor-pointer"
+                  title="Detach project"
+                  aria-label="Detach project"
+                >
+                  <X class="w-3 h-3" />
+                </button>
               </div>
             </div>
           </div>
 
-          <!-- Status badges & close button -->
-          <div class="flex items-center space-x-1 shrink-0">
-            {#if stagedCount > 0}
-              <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-400 font-bold" title="{stagedCount} staged">
-                +{stagedCount}
-              </span>
-            {/if}
-            {#if unstagedCount > 0}
-              <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-400 font-bold" title="{unstagedCount} modified">
-                ~{unstagedCount}
-              </span>
-            {/if}
-            {#if !isDirty && project.info}
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Clean working tree"></span>
-            {/if}
+          <!-- Collapsible Terminal Tabs for this Project -->
+          {#if isExpanded}
+            <div class="ml-3 pl-2.5 border-l border-slate-200 dark:border-deck-border/40 space-y-0.5 my-0.5">
+              {#each project.sessions as session, sIdx (session.id)}
+                {@const isSessionActive = isActive && session.id === appState.activeSessionId}
+                {@const isSecondary = isActive && appState.terminalLayout !== 'single' && session.id === appState.secondarySessionId}
+                {@const isFocused = (isSessionActive && appState.focusedPane === 'primary') || (isSecondary && appState.focusedPane === 'secondary') || (appState.terminalLayout === 'single' && isSessionActive)}
+                {@const isEditing = editingSessionId === session.id}
 
-            <button
-              onclick={(e) => {
-                e.stopPropagation();
-                appState.closeProject(project.id);
-              }}
-              class="opacity-0 group-hover:opacity-100 p-0.5 rounded text-slate-400 hover:text-rose-600 dark:text-deck-muted dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-deck-card transition cursor-pointer"
-              title="Detach project"
-              aria-label="Detach project"
-            >
-              <X class="w-3 h-3" />
-            </button>
-          </div>
+                <div
+                  class="group/tab relative flex items-center justify-between px-2 py-1.5 rounded-md text-xs font-mono transition cursor-pointer {isFocused ? 'bg-slate-200/60 dark:bg-deck-card/70 text-slate-900 dark:text-deck-bright font-medium' : isSessionActive ? 'bg-slate-200/40 dark:bg-deck-card/50 text-slate-800 dark:text-deck-text' : isSecondary ? 'bg-purple-50/60 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright hover:bg-slate-200/40 dark:hover:bg-deck-card/40'}"
+                  onclick={(e) => handleSelectSession(project.id, session.id, e)}
+                  ondblclick={(e) => startRenaming(session, e)}
+                  role="button"
+                  tabindex="0"
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') handleSelectSession(project.id, session.id, e);
+                  }}
+                >
+                  <!-- Active thin left indicator -->
+                  {#if isFocused || isSessionActive}
+                    <span class="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-blue-600 dark:bg-blue-400 rounded-full"></span>
+                  {/if}
+
+                  <div class="flex items-center space-x-1.5 min-w-0 flex-1 pr-1">
+                    <!-- Split layout indicator if active project -->
+                    {#if isActive && appState.terminalLayout !== 'single'}
+                      {#if isSessionActive}
+                        <span class="px-1 py-0.2 rounded text-[9px] font-bold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">P1</span>
+                      {:else if isSecondary}
+                        <span class="px-1 py-0.2 rounded text-[9px] font-bold bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300">P2</span>
+                      {/if}
+                    {/if}
+
+                    <!-- Agent / Shell Icon -->
+                    <button
+                      type="button"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        appState.toggleSessionAgent(session.id);
+                      }}
+                      class="p-0.5 rounded hover:bg-slate-300/60 dark:hover:bg-deck-border/60 transition shrink-0"
+                      title={session.isAgent ? 'AI Agent (Click to reset to shell)' : 'Standard Shell (Click to mark as AI Agent)'}
+                    >
+                      {#if session.isAgent}
+                        <Bot class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                      {:else}
+                        <TerminalIcon class="w-3.5 h-3.5 text-slate-400 dark:text-deck-muted" />
+                      {/if}
+                    </button>
+
+                    <!-- Terminal Title or Inline Rename -->
+                    {#if isEditing}
+                      <div class="flex items-center space-x-1 flex-1 min-w-0" onclick={(e) => e.stopPropagation()} role="presentation">
+                        <input
+                          type="text"
+                          bind:value={editingTitle}
+                          class="bg-white dark:bg-deck-bg border border-blue-500 rounded px-1 py-0.5 text-xs text-slate-900 dark:text-deck-bright font-mono focus:outline-none w-full shadow-inner"
+                          onkeydown={(e) => handleRenameKeydown(session.id, e)}
+                          onblur={() => saveRename(session.id)}
+                        />
+                        <button
+                          onclick={() => saveRename(session.id)}
+                          class="p-0.5 hover:bg-slate-200 dark:hover:bg-deck-border rounded text-emerald-600 dark:text-emerald-400 cursor-pointer shrink-0"
+                          title="Save title"
+                        >
+                          <Check class="w-3 h-3" />
+                        </button>
+                      </div>
+                    {:else}
+                      <span class="truncate text-xs {isFocused ? 'text-slate-900 dark:text-deck-bright font-medium' : ''}" title={session.title}>
+                        {session.title}
+                      </span>
+                    {/if}
+                  </div>
+
+                  <!-- Right Side: Status Indicator & Actions -->
+                  <div class="flex items-center space-x-1 shrink-0">
+                    <!-- Terminal Status Indicators (dots/icons) -->
+                    {#if session.agentStatus === 'blocked' || session.attentionState}
+                      <span class="flex items-center text-amber-500 mr-0.5" title="Agent Blocked: Waiting for user input">
+                        <AlertCircle class="w-3 h-3 animate-pulse" />
+                      </span>
+                    {:else if session.agentStatus === 'working'}
+                      <span class="relative flex h-2 w-2 mr-0.5" title="Agent Working">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                      </span>
+                    {:else if session.agentStatus === 'idle' && session.isAgent}
+                      <span class="w-1.5 h-1.5 rounded-full border border-emerald-500 dark:border-emerald-400 mr-0.5" title="Agent Idle"></span>
+                    {/if}
+
+                    <!-- Rename button on hover -->
+                    {#if !isEditing}
+                      <button
+                        onclick={(e) => startRenaming(session, e)}
+                        class="opacity-0 group-hover/tab:opacity-100 p-0.5 hover:bg-slate-200 dark:hover:bg-deck-border rounded text-slate-400 hover:text-slate-900 dark:text-deck-muted dark:hover:text-deck-bright transition cursor-pointer"
+                        title="Rename"
+                        aria-label="Rename"
+                      >
+                        <Edit2 class="w-2.5 h-2.5" />
+                      </button>
+                    {/if}
+
+                    <!-- Close session button -->
+                    {#if project.sessions.length > 1}
+                      <button
+                        class="opacity-0 group-hover/tab:opacity-100 p-0.5 hover:bg-slate-200 dark:hover:bg-deck-border rounded text-slate-400 hover:text-rose-600 dark:text-deck-muted dark:hover:text-rose-400 transition cursor-pointer"
+                        onclick={(e) => handleCloseSession(project.id, session.id, e)}
+                        title="Close terminal"
+                        aria-label="Close terminal"
+                      >
+                        <X class="w-3 h-3" />
+                      </button>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+
+              <!-- New Terminal Action Row -->
+              <button
+                onclick={(e) => handleAddSession(project.id, e)}
+                class="w-full flex items-center space-x-2 px-2 py-1.5 text-xs text-slate-500 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright hover:bg-slate-200/40 dark:hover:bg-deck-card/40 rounded-md transition cursor-pointer"
+                title="New Terminal"
+              >
+                <Plus class="w-3.5 h-3.5 shrink-0" />
+                <span>New Terminal</span>
+              </button>
+            </div>
+          {/if}
         </div>
       {/each}
     </div>
@@ -355,23 +549,99 @@
       <div class="flex-1 overflow-y-auto py-3 space-y-1">
         {#each appState.projects as project (project.id)}
           {@const isActive = project.id === appState.activeProjectId}
-          <div
-            class="flex items-center justify-between px-3 py-2 rounded-lg text-xs cursor-pointer border {isActive ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-500/40 text-blue-950 dark:text-deck-bright font-semibold' : 'text-slate-700 dark:text-deck-text hover:bg-slate-100 dark:hover:bg-deck-card border-transparent'}"
-            onclick={() => handleSelectProject(project.id)}
-            role="button"
-            tabindex="0"
-            onkeydown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') handleSelectProject(project.id);
-            }}
-          >
-            <div class="flex items-center space-x-2 truncate flex-1">
-              <FolderGit2 class="w-4 h-4 text-slate-400 shrink-0" />
-              <span class="truncate">{project.name}</span>
+          {@const stagedCount = project.info?.staged_count || 0}
+          {@const unstagedCount = project.info?.unstaged_count || 0}
+          {@const totalChanges = stagedCount + unstagedCount}
+          {@const isExpanded = isProjectExpanded(project.id)}
+
+          <div class="space-y-0.5">
+            <div
+              class="flex items-center justify-between px-2 py-1.5 rounded-md text-xs cursor-pointer transition {isActive ? 'text-slate-900 dark:text-deck-bright font-medium bg-slate-200/50 dark:bg-deck-card/50' : 'text-slate-700 dark:text-deck-text hover:bg-slate-100 dark:hover:bg-deck-card'}"
+              onclick={() => handleSelectProject(project.id)}
+              role="button"
+              tabindex="0"
+              onkeydown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') handleSelectProject(project.id);
+              }}
+            >
+              <div class="flex items-center space-x-1.5 min-w-0 flex-1 pr-1">
+                <button
+                  type="button"
+                  onclick={(e) => toggleProjectCollapse(project.id, e)}
+                  class="p-0.5 rounded text-slate-400 hover:text-slate-800 dark:text-deck-muted dark:hover:text-deck-bright transition shrink-0"
+                >
+                  {#if isExpanded}
+                    <ChevronDown class="w-3.5 h-3.5" />
+                  {:else}
+                    <ChevronRight class="w-3.5 h-3.5" />
+                  {/if}
+                </button>
+                <FolderGit2 class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span class="truncate font-medium">{project.name}</span>
+              </div>
+              <div class="flex items-center space-x-1 shrink-0">
+                {#if totalChanges > 0}
+                  <span class="text-[11px] font-mono text-slate-400 dark:text-deck-muted">
+                    +{totalChanges}
+                  </span>
+                {/if}
+                {#if project.info?.branch}
+                  <span class="text-[10px] font-mono text-blue-600 dark:text-blue-400 shrink-0 ml-1">
+                    {project.info.branch}
+                  </span>
+                {/if}
+              </div>
             </div>
-            {#if project.info?.branch}
-              <span class="text-[10px] font-mono text-blue-600 dark:text-blue-400 shrink-0">
-                {project.info.branch}
-              </span>
+
+            {#if isExpanded}
+              <div class="ml-3 pl-2.5 border-l border-slate-200 dark:border-deck-border/40 space-y-0.5 my-0.5">
+                {#each project.sessions as session (session.id)}
+                  {@const isSessionActive = isActive && session.id === appState.activeSessionId}
+                  <div
+                    class="relative flex items-center justify-between px-2 py-1.5 rounded-md text-xs font-mono cursor-pointer transition {isSessionActive ? 'bg-slate-200/60 dark:bg-deck-card text-slate-900 dark:text-deck-bright font-medium' : 'text-slate-600 dark:text-deck-muted hover:bg-slate-100 dark:hover:bg-deck-card'}"
+                    onclick={(e) => handleSelectSession(project.id, session.id, e)}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') handleSelectSession(project.id, session.id, e);
+                    }}
+                  >
+                    {#if isSessionActive}
+                      <span class="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-blue-600 dark:bg-blue-400 rounded-full"></span>
+                    {/if}
+                    <div class="flex items-center space-x-1.5 min-w-0 truncate pr-1">
+                      {#if session.isAgent}
+                        <Bot class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+                      {:else}
+                        <TerminalIcon class="w-3.5 h-3.5 text-slate-400 dark:text-deck-muted shrink-0" />
+                      {/if}
+                      <span class="truncate">{session.title}</span>
+                    </div>
+                    <div class="flex items-center space-x-1 shrink-0">
+                      {#if session.agentStatus === 'blocked' || session.attentionState}
+                        <span class="text-amber-500 mr-0.5" title="Blocked">
+                          <AlertCircle class="w-3 h-3 animate-pulse" />
+                        </span>
+                      {:else if session.agentStatus === 'working'}
+                        <span class="relative flex h-2 w-2 mr-0.5" title="Working">
+                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                          <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                        </span>
+                      {:else if session.agentStatus === 'idle' && session.isAgent}
+                        <span class="w-1.5 h-1.5 rounded-full border border-emerald-500 dark:border-emerald-400 mr-0.5" title="Idle"></span>
+                      {/if}
+                    </div>
+                  </div>
+                {/each}
+
+                <button
+                  onclick={(e) => handleAddSession(project.id, e)}
+                  class="w-full flex items-center space-x-2 px-2 py-1.5 text-xs text-slate-500 dark:text-deck-muted hover:text-slate-900 dark:hover:text-deck-bright hover:bg-slate-100 dark:hover:bg-deck-card/40 rounded-md transition cursor-pointer"
+                >
+                  <Plus class="w-3.5 h-3.5 shrink-0" />
+                  <span>New Terminal</span>
+                </button>
+              </div>
             {/if}
           </div>
         {/each}

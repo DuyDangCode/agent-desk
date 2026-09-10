@@ -7,7 +7,12 @@ import {
   formatComponentSteerPrompt,
   encodeBracketedPaste,
   generateInspectorScript,
-  resolveSteerTargetSession
+  resolveSteerTargetSession,
+  extractPortFromUrl,
+  buildPreviewProxyUrl,
+  preparePreviewHtml,
+  calculateDesktopViewportScale,
+  resolveEffectiveColorScheme
 } from '../src/lib/utils/webviewSteer.ts';
 import type { UIComponentContext } from '../src/lib/types/index.ts';
 
@@ -159,6 +164,83 @@ describe('Webview & Component Steering Utility Tests', () => {
       assert.ok(script.includes('postMessage'));
       assert.ok(script.includes('__reactFiber'));
       assert.ok(script.includes('__svelte_meta'));
+      assert.ok(script.includes('AGENTDECK_INSPECTOR_READY'));
+      assert.ok(script.includes('AGENTDECK_PING'));
+      assert.ok(script.includes('AGENTDECK_NAVIGATE'));
+    });
+  });
+
+  describe('extractPortFromUrl', () => {
+    it('Lower Boundary: null, empty or non-numeric port returns null', () => {
+      assert.equal(extractPortFromUrl(''), null);
+      assert.equal(extractPortFromUrl('http://localhost'), null);
+      assert.equal(extractPortFromUrl('https://example.com/app'), null);
+    });
+
+    it('In-Bound: extracts standard localhost ports with subpaths and queries', () => {
+      assert.equal(extractPortFromUrl('http://localhost:5173'), 5173);
+      assert.equal(extractPortFromUrl('http://localhost:3000/app/dashboard'), 3000);
+      assert.equal(extractPortFromUrl('http://127.0.0.1:8080?user=1'), 8080);
+      assert.equal(extractPortFromUrl('http://localhost:4020/#/settings'), 4020);
+    });
+
+    it('Upper Boundary: high valid port (65535) and out-of-range port', () => {
+      assert.equal(extractPortFromUrl('http://localhost:65535/test'), 65535);
+      assert.equal(extractPortFromUrl('http://localhost:70000/test'), null);
+    });
+  });
+
+  describe('buildPreviewProxyUrl', () => {
+    it('Lower Boundary: empty string falls back to default localhost:5173 through transparent proxy', () => {
+      const url = buildPreviewProxyUrl('');
+      assert.equal(url, 'http://127.0.0.1:4020/proxy/5173/');
+    });
+
+    it('In-Bound: generates transparent /proxy/:port/*path URLs for dev servers', () => {
+      const url1 = buildPreviewProxyUrl('5173');
+      assert.equal(url1, 'http://127.0.0.1:4020/proxy/5173/');
+
+      const url2 = buildPreviewProxyUrl('http://localhost:3000/app');
+      assert.equal(url2, 'http://127.0.0.1:4020/proxy/3000/app');
+    });
+
+    it('Upper Boundary: supports custom proxy base, queries, hashes, and non-port URL fallback', () => {
+      const url = buildPreviewProxyUrl('http://127.0.0.1:8080/dashboard?view=full#top', 'http://127.0.0.1:4022/');
+      assert.equal(url, 'http://127.0.0.1:4022/proxy/8080/dashboard?view=full#top');
+
+      const nonPortUrl = buildPreviewProxyUrl('https://example.com/preview');
+      assert.equal(nonPortUrl, 'http://127.0.0.1:4020/api/preview?url=' + encodeURIComponent('https://example.com/preview'));
+    });
+  });
+
+  describe('preparePreviewHtml', () => {
+    it('Lower Boundary: empty string returns empty string without error', () => {
+      assert.equal(preparePreviewHtml('', 'http://localhost:5173'), '');
+    });
+
+    it('In-Bound: injects base href and inspector script into standard HTML document', () => {
+      const raw = `<!DOCTYPE html><html><head><title>App</title></head><body><div id="root">Hello</div></body></html>`;
+      const result = preparePreviewHtml(raw, 'http://localhost:5173');
+
+      assert.ok(result.includes('<base href="http://localhost:5173/">'));
+      assert.ok(result.includes('id="__agentdeck_inspector_script"'));
+      assert.ok(result.includes('AGENTDECK_COMPONENT_PICKED'));
+      assert.ok(result.includes('<div id="root">Hello</div>'));
+    });
+
+    it('Upper Boundary: handles HTML without head tag and avoids duplicate injection', () => {
+      const raw = `<div>Bare snippet</div>`;
+      const result = preparePreviewHtml(raw, '3000');
+
+      assert.ok(result.includes('<base href="http://localhost:3000/">'));
+      assert.ok(result.includes('id="__agentdeck_inspector_script"'));
+
+      // Idempotence check: calling preparePreviewHtml again on already prepared html doesn't duplicate
+      const secondPass = preparePreviewHtml(result, '3000');
+      const baseMatches = secondPass.match(/<base href=/g);
+      const scriptMatches = secondPass.match(/id="__agentdeck_inspector_script"/g);
+      assert.equal(baseMatches?.length, 1);
+      assert.equal(scriptMatches?.length, 1);
     });
   });
 
@@ -200,6 +282,98 @@ describe('Webview & Component Steering Utility Tests', () => {
       ];
       const target = resolveSteerTargetSession(shellOnlySessions, 'shell-2', null, null);
       assert.equal(target, 'shell-2');
+    });
+  });
+
+  describe('calculateDesktopViewportScale', () => {
+    it('Lower Boundary: 0 or negative container width returns 1', () => {
+      assert.equal(calculateDesktopViewportScale(0, 1280), 1);
+      assert.equal(calculateDesktopViewportScale(-50, 1280), 1);
+      assert.equal(calculateDesktopViewportScale(500, 0), 1);
+    });
+
+    it('Lower Boundary: extremely narrow container (320px or less) clamps to minimum 0.25', () => {
+      assert.equal(calculateDesktopViewportScale(200, 1280), 0.25);
+      assert.equal(calculateDesktopViewportScale(320, 1280), 0.25);
+    });
+
+    it('In-Bound: split pane widths scale proportionally to fit', () => {
+      // 656px container: available = 656 - 16 = 640 => 640 / 1280 = 0.5
+      assert.equal(calculateDesktopViewportScale(656, 1280), 0.5);
+
+      // 976px container: available = 976 - 16 = 960 => 960 / 1280 = 0.75
+      assert.equal(calculateDesktopViewportScale(976, 1280), 0.75);
+    });
+
+    it('Upper Boundary: full desktop containers (>= 1296px) return 1 without downscaling', () => {
+      assert.equal(calculateDesktopViewportScale(1296, 1280), 1);
+      assert.equal(calculateDesktopViewportScale(1440, 1280), 1);
+      assert.equal(calculateDesktopViewportScale(1920, 1280), 1);
+      assert.equal(calculateDesktopViewportScale(10000, 1280), 1);
+    });
+  });
+
+  describe('resolveEffectiveColorScheme', () => {
+    it('Lower Boundary: empty or unrecognised resolved theme in auto mode defaults to dark', () => {
+      assert.equal(resolveEffectiveColorScheme('auto', ''), 'dark');
+      assert.equal(resolveEffectiveColorScheme('auto', 'unknown'), 'dark');
+    });
+
+    it('In-Bound: explicit user preference overrides active app theme', () => {
+      assert.equal(resolveEffectiveColorScheme('dark', 'light'), 'dark');
+      assert.equal(resolveEffectiveColorScheme('light', 'dark'), 'light');
+      assert.equal(resolveEffectiveColorScheme('dark', 'black'), 'dark');
+      assert.equal(resolveEffectiveColorScheme('light', 'onedark'), 'light');
+    });
+
+    it('In-Bound: auto mode resolves dark for all dark family themes', () => {
+      assert.equal(resolveEffectiveColorScheme('auto', 'dark'), 'dark');
+      assert.equal(resolveEffectiveColorScheme('auto', 'black'), 'dark');
+      assert.equal(resolveEffectiveColorScheme('auto', 'onedark'), 'dark');
+      assert.equal(resolveEffectiveColorScheme('auto', 'dracula'), 'dark');
+      assert.equal(resolveEffectiveColorScheme('auto', 'nord'), 'dark');
+    });
+
+    it('Upper Boundary: auto mode resolves light only when theme is explicitly light', () => {
+      assert.equal(resolveEffectiveColorScheme('auto', 'light'), 'light');
+    });
+  });
+
+  describe('generateInspectorScript with Theme Synchronization', () => {
+    it('In-Bound: inspector script contains AGENTDECK_SET_THEME message handler', () => {
+      const script = generateInspectorScript();
+      assert.ok(script.includes('AGENTDECK_SET_THEME'));
+      assert.ok(script.includes('document.documentElement.style.colorScheme'));
+      assert.ok(script.includes("classList.add('dark')"));
+      assert.ok(script.includes("classList.remove('dark')"));
+    });
+
+    it('In-Bound: inspector script includes path virtualization for Next.js/SPA gateways', () => {
+      const script = generateInspectorScript();
+      assert.ok(script.includes("pathname.startsWith('/proxy/')"));
+      assert.ok(script.includes('window.history.replaceState'));
+      assert.ok(script.includes("document.documentElement.style.backgroundColor = '#0d1117'"));
+    });
+
+    it('In-Bound: inspector script includes native inspection pill and dual IPC reporting', () => {
+      const script = generateInspectorScript();
+      assert.ok(script.includes('report_inspected_component'));
+      assert.ok(script.includes('__TAURI_INTERNALS__'));
+      assert.ok(script.includes('__agentdeck_native_pill'));
+      assert.ok(script.includes('__AGENTDECK_SET_INSPECT__'));
+    });
+
+    it('In-Bound: inspector script includes in-window floating steer popup and action dispatch', () => {
+      const script = generateInspectorScript();
+      assert.ok(script.includes('__agentdeck_steer_popup'));
+      assert.ok(script.includes('__agentdeck_steer_input'));
+      assert.ok(script.includes('__agentdeck_steer_submit'));
+      assert.ok(script.includes('steer_selected_component'));
+      assert.ok(script.includes('/api/component-steer'));
+      assert.ok(script.includes('AGENTDECK_COMPONENT_STEER'));
+      assert.ok(script.includes('AGENTDECK_COMPONENT_CANCEL'));
+      assert.ok(script.includes('__AGENTDECK_CLOSE_STEER_POPUP__'));
+      assert.ok(script.includes('AGENTDECK_CLOSE_STEER'));
     });
   });
 });

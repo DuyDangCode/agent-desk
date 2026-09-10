@@ -545,7 +545,7 @@
                       {#if line.tokens && line.tokens.length > 0}
                         {#each line.tokens as token}
                           {#if token.is_highlighted}
-                            <span class="rounded-xs px-0.5 font-bold {isAdd ? 'bg-emerald-300/80 dark:bg-emerald-700/80 text-emerald-950 dark:text-white ring-1 ring-emerald-500/50' : 'bg-rose-300/80 dark:bg-rose-700/80 text-rose-950 dark:text-white ring-1 ring-rose-500/50'}">
+                            <span class="rounded-xs px-0.5 font-semibold {isAdd ? 'bg-emerald-200/70 dark:bg-emerald-500/25 text-emerald-950 dark:text-emerald-100' : 'bg-rose-200/70 dark:bg-rose-500/25 text-rose-950 dark:text-rose-100'}">
                               {token.content}
                             </span>
                           {:else}
@@ -607,7 +607,7 @@
                                 {#if row.left.tokens && row.left.tokens.length > 0}
                                   {#each row.left.tokens as token}
                                     {#if token.is_highlighted}
-                                      <span class="bg-rose-300/80 dark:bg-rose-700/80 text-rose-950 dark:text-white rounded-xs px-0.5 font-bold ring-1 ring-rose-500/50">
+                                      <span class="bg-rose-200/70 dark:bg-rose-500/25 text-rose-950 dark:text-rose-100 rounded-xs px-0.5 font-semibold">
                                         {token.content}
                                       </span>
                                     {:else}
@@ -652,7 +652,7 @@
                                 {#if row.right.tokens && row.right.tokens.length > 0}
                                   {#each row.right.tokens as token}
                                     {#if token.is_highlighted}
-                                      <span class="bg-emerald-300/80 dark:bg-emerald-700/80 text-emerald-950 dark:text-white rounded-xs px-0.5 font-bold ring-1 ring-emerald-500/50">
+                                      <span class="bg-emerald-200/70 dark:bg-emerald-500/25 text-emerald-950 dark:text-emerald-100 rounded-xs px-0.5 font-semibold">
                                         {token.content}
                                       </span>
                                     {:else}

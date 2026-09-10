@@ -120,6 +120,17 @@ export interface AgentEvent {
   timestamp?: number;
 }
 
+export type AgentStatus = 'idle' | 'working' | 'blocked';
+
+export interface PtyProcessInfo {
+  session_id: string;
+  pid?: number | null;
+  binary_name?: string | null;
+  cmdline?: string | null;
+  is_agent: boolean;
+  matched_agent?: string | null;
+}
+
 export interface PtySession {
   id: string;
   title: string;
@@ -129,6 +140,9 @@ export interface PtySession {
   agentKind: AgentKind;
   attentionState?: AgentEventType | null;
   attentionMessage?: string | null;
+  agentStatus?: AgentStatus | null;
+  detectedBinary?: string | null;
+  isCustomTitle?: boolean;
 }
 
 export interface AgentIntegrationInfo {

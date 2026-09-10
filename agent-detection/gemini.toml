@@ -1,0 +1,27 @@
+[agent]
+name = "gemini"
+binary_names = ["gemini", "gemini-cli"]
+
+[patterns]
+blocked = [
+  "(?i)\\[y/N\\]",
+  "(?i)\\(y/n\\)",
+  "(?i)allow\\s+.*\\?",
+  "(?i)approve\\s+",
+  "(?i)do you want to proceed\\?",
+  "(?i)permission\\s+required"
+]
+
+idle = [
+  "^❯\\s*$",
+  "^gemini>\\s*$",
+  "^[\\w\\-\\.]+>\\s*$",
+  "^\\?\\s+"
+]
+
+working = [
+  "[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]",
+  "(?i)thinking\\.\\.\\.",
+  "(?i)generating\\.\\.\\.",
+  "(?i)running"
+]

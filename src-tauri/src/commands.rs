@@ -144,6 +144,14 @@ pub fn kill_pty(
 }
 
 #[tauri::command]
+pub fn get_pty_process_info(
+    pty_manager: State<PtyManager>,
+    session_id: String,
+) -> Result<crate::pty::PtyProcessInfo, String> {
+    pty_manager.get_process_info(&session_id)
+}
+
+#[tauri::command]
 pub fn open_repository(
     app: AppHandle,
     watcher_manager: State<WatcherManager>,
@@ -366,5 +374,119 @@ pub fn uninstall_agent_integration(agent: String) -> Result<crate::integrations:
     }
 }
 
+#[tauri::command]
+pub async fn fetch_preview_page(url: String) -> Result<crate::preview::PreviewPageResult, String> {
+    crate::preview::fetch_url_internal(&url).await
+}
+
+#[tauri::command]
+pub async fn open_native_preview_window(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    use tauri::Manager;
+    let target_url = if url.starts_with("http://") || url.starts_with("https://") {
+        url
+    } else {
+        format!("http://{}", url)
+    };
+
+    if let Some(existing) = app.get_webview_window("agentdeck-preview") {
+        let _ = existing.navigate(target_url.parse().map_err(|e| format!("Invalid URL: {}", e))?);
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+
+    let parsed_url = target_url.parse().map_err(|e| format!("Invalid URL: {}", e))?;
+    let builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        "agentdeck-preview",
+        tauri::WebviewUrl::External(parsed_url),
+    )
+    .title("AgentDeck - Native Web Preview")
+    .inner_size(1200.0, 800.0)
+    .resizable(true)
+    .initialization_script(crate::preview::AGENTDECK_INSPECTOR_JS);
+
+    builder.build().map_err(|e| format!("Failed to create native webview window: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn close_native_preview_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(existing) = app.get_webview_window("agentdeck-preview") {
+        let _ = existing.close();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn is_native_preview_open(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::Manager;
+    Ok(app.get_webview_window("agentdeck-preview").is_some())
+}
+
+#[tauri::command]
+pub fn focus_native_preview_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(existing) = app.get_webview_window("agentdeck-preview") {
+        let _ = existing.unminimize();
+        let _ = existing.show();
+        let _ = existing.set_focus();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reload_native_preview_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(existing) = app.get_webview_window("agentdeck-preview") {
+        let _ = existing.eval("window.location.reload();");
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn report_inspected_component(
+    app: tauri::AppHandle,
+    payload: serde_json::Value,
+) -> Result<(), String> {
+    use tauri::Emitter;
+    let _ = app.emit("agentdeck:component-picked", payload);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn steer_selected_component(
+    app: tauri::AppHandle,
+    meta: serde_json::Value,
+    instruction: String,
+) -> Result<(), String> {
+    use tauri::Emitter;
+    let _ = app.emit("agentdeck:steer-component", serde_json::json!({
+        "meta": meta,
+        "instruction": instruction,
+    }));
+    let _ = focus_app_window(app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn close_native_steer_popup(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(existing) = app.get_webview_window("agentdeck-preview") {
+        let _ = existing.eval("window.__AGENTDECK_CLOSE_STEER_POPUP__ && window.__AGENTDECK_CLOSE_STEER_POPUP__();");
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_native_preview_inspect(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(existing) = app.get_webview_window("agentdeck-preview") {
+        let script = format!("window.__AGENTDECK_SET_INSPECT__ && window.__AGENTDECK_SET_INSPECT__({});", enabled);
+        let _ = existing.eval(&script);
+    }
+    Ok(())
+}
 
 

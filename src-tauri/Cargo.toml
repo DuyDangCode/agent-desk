@@ -1,6 +1,6 @@
 [package]
 name = "agent-deck"
-version = "2.0.0"
+version = "3.0.0"
 description = "The Human-Centric Review Harness & Workspace for CLI Coding Agents"
 authors = ["AgentDeck Team"]
 license = "MIT"

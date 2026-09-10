@@ -15,7 +15,8 @@ import type {
   AgentIntegrationInfo,
   TerminalSettings,
   UIComponentContext,
-  CanvasTab
+  CanvasTab,
+  AgentStatus
 } from '$lib/types';
 import { 
   formatComponentSteerPrompt, 
@@ -61,6 +62,7 @@ import {
 } from '$lib/utils/tauri';
 import { resolveNextFileSelection } from '$lib/utils/fileSelection';
 import { notificationManager } from '$lib/utils/notifications';
+import { globalAgentStateMachine, playAlertSound } from '$lib/utils/agentDetection';
 
 const DIFF_VIEW_MODE_KEY = 'agentdeck_diff_view_mode';
 const DIFF_WRAP_LINES_KEY = 'agentdeck_diff_wrap_lines';
@@ -379,7 +381,7 @@ class AppState {
 
   // Webview Preview & Direct Component Steering
   activeCanvasTab = $state<CanvasTab>('diff');
-  webPreviewUrl = $state<string>('http://localhost:5173');
+  webPreviewUrl = $state<string>('');
   isInspectMode = $state<boolean>(false);
   selectedComponent = $state<UIComponentContext | null>(null);
   directSteerInput = $state<string>('');
@@ -649,11 +651,11 @@ class AppState {
   }
 
   get hasAttentionAlert(): boolean {
-    return this.allSessions.some((s) => Boolean(s.attentionState));
+    return this.allSessions.some((s) => Boolean(s.attentionState) || s.agentStatus === 'blocked');
   }
 
   get attentionSessions(): PtySession[] {
-    return this.allSessions.filter((s) => Boolean(s.attentionState));
+    return this.allSessions.filter((s) => Boolean(s.attentionState) || s.agentStatus === 'blocked');
   }
 
   isProjectAttentionRequired(projectId: string): boolean {
@@ -864,6 +866,9 @@ class AppState {
 
     // 5. Query detected agent integrations
     this.loadAgentIntegrations();
+
+    // 6. Initialize Terminal Screen Buffer & Pattern Matching Engine
+    this.initAgentDetection();
   }
 
   private handleRepoChangedEvent(repoPath: string) {
@@ -1793,23 +1798,25 @@ class AppState {
 
     s.isAgent = isAgent;
     s.agentKind = isAgent ? agentKind : 'shell';
-    if (title && title.trim()) {
-      s.title = title.trim();
-    } else if (!isAgent) {
-      // If resetting to shell and title was an agent title, reset to a clean default
-      const isDefaultAgentTitle = [
-        'Antigravity (AGY)', 
-        'OpenCode', 
-        'Claude Code', 
-        'Aider AI', 
-        'Gemini CLI', 
-        'Goose Agent', 
-        'Custom Agent'
-      ].includes(s.title) || s.title.endsWith(' Agent');
+    if (!s.isCustomTitle) {
+      if (title && title.trim()) {
+        s.title = title.trim();
+      } else if (!isAgent) {
+        // If resetting to shell and title was an agent title, reset to a clean default
+        const isDefaultAgentTitle = [
+          'Antigravity (AGY)', 
+          'OpenCode', 
+          'Claude Code', 
+          'Aider AI', 
+          'Gemini CLI', 
+          'Goose Agent', 
+          'Custom Agent'
+        ].includes(s.title) || s.title.endsWith(' Agent');
 
-      if (isDefaultAgentTitle) {
-        const idx = this.sessions.findIndex((sess) => sess.id === id);
-        s.title = `Terminal (${idx >= 0 ? idx + 1 : 1})`;
+        if (isDefaultAgentTitle) {
+          const idx = this.sessions.findIndex((sess) => sess.id === id);
+          s.title = `Terminal (${idx >= 0 ? idx + 1 : 1})`;
+        }
       }
     }
 
@@ -1840,11 +1847,111 @@ class AppState {
     const target = this.allSessions.find((s) => s.id === id);
     if (target && newTitle.trim()) {
       target.title = newTitle.trim();
+      target.isCustomTitle = true;
       if (this.activeProject) {
         this.activeProject.sessions = [...this.activeProject.sessions];
       } else {
         this.standaloneSessions = [...this.standaloneSessions];
       }
+    }
+  }
+
+  updateSessionForegroundProcess(
+    id: string,
+    proc: {
+      binary_name?: string | null;
+      cmdline?: string | null;
+      is_agent: boolean;
+      matched_agent?: string | null;
+    }
+  ) {
+    const s = this.allSessions.find((session) => session.id === id);
+    if (!s) return;
+
+    const rawBinary = (proc.binary_name || '').trim();
+    const cleanBinary = rawBinary.split('/').pop()?.toLowerCase() || '';
+    const isShell = !cleanBinary || ['bash', 'zsh', 'sh', 'fish', 'shell', 'pwsh', 'cmd.exe', 'powershell'].includes(cleanBinary);
+
+    let changed = false;
+
+    if (proc.is_agent && proc.matched_agent) {
+      const matchedKind = proc.matched_agent.toLowerCase() as AgentKind;
+      if (!s.isAgent || s.agentKind !== matchedKind) {
+        s.isAgent = true;
+        s.agentKind = matchedKind;
+        changed = true;
+      }
+      s.detectedBinary = proc.matched_agent;
+
+      if (!s.isCustomTitle) {
+        let agentTitle = matchedKind.charAt(0).toUpperCase() + matchedKind.slice(1);
+        if (matchedKind === 'claude') agentTitle = 'Claude Code';
+        else if (matchedKind === 'antigravity') agentTitle = 'Antigravity (AGY)';
+        else if (matchedKind === 'opencode') agentTitle = 'OpenCode';
+        else if (matchedKind === 'aider') agentTitle = 'Aider AI';
+        else if (matchedKind === 'gemini') agentTitle = 'Gemini CLI';
+        else if (matchedKind === 'goose') agentTitle = 'Goose Agent';
+
+        if (s.title !== agentTitle) {
+          s.title = agentTitle;
+          changed = true;
+        }
+      }
+    } else if (!isShell) {
+      // Foreground application is running (e.g. nvim, tmux, vim, htop, etc.)
+      if (s.isAgent) {
+        s.isAgent = false;
+        s.agentKind = 'shell';
+        changed = true;
+      }
+      s.detectedBinary = cleanBinary;
+
+      if (!s.isCustomTitle) {
+        let appTitle = cleanBinary;
+        if (cleanBinary === 'nvim') appTitle = 'Neovim';
+        else if (cleanBinary === 'vim') appTitle = 'Vim';
+        else if (cleanBinary === 'tmux') appTitle = 'tmux';
+        else if (cleanBinary === 'htop') appTitle = 'htop';
+        else if (cleanBinary === 'git') appTitle = 'Git';
+        else if (cleanBinary === 'cargo') appTitle = 'Cargo';
+        else if (cleanBinary === 'npm' || cleanBinary === 'pnpm' || cleanBinary === 'yarn' || cleanBinary === 'bun') appTitle = cleanBinary;
+        else if (cleanBinary === 'python' || cleanBinary === 'python3') appTitle = 'Python';
+        else if (cleanBinary === 'node') appTitle = 'Node.js';
+        else {
+          appTitle = cleanBinary.charAt(0).toUpperCase() + cleanBinary.slice(1);
+        }
+
+        if (s.title !== appTitle) {
+          s.title = appTitle;
+          changed = true;
+        }
+      }
+    } else {
+      // Returned to shell prompt
+      if (s.isAgent) {
+        s.isAgent = false;
+        s.agentKind = 'shell';
+        changed = true;
+      }
+      s.detectedBinary = null;
+
+      if (!s.isCustomTitle) {
+        const idx = this.sessions.findIndex((sess) => sess.id === id);
+        const defaultTitle = `Terminal (${idx >= 0 ? idx + 1 : 1})`;
+        if (s.title !== defaultTitle) {
+          s.title = defaultTitle;
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      if (this.activeProject) {
+        this.activeProject.sessions = [...this.activeProject.sessions];
+      } else {
+        this.standaloneSessions = [...this.standaloneSessions];
+      }
+      this.notifyResize();
     }
   }
 
@@ -1878,6 +1985,58 @@ class AppState {
         this.standaloneSessions = [...this.standaloneSessions];
       }
     }
+  }
+
+  setSessionAgentStatus(id: string, status: AgentStatus | null, detectedBinary?: string | null) {
+    const s = this.allSessions.find((session) => session.id === id);
+    if (!s) return;
+
+    s.agentStatus = status;
+    if (detectedBinary !== undefined) {
+      s.detectedBinary = detectedBinary;
+    }
+
+    if (status === 'blocked') {
+      s.attentionState = 'permission_required';
+    } else if (status === 'idle') {
+      s.attentionState = null;
+      s.attentionMessage = null;
+    }
+
+    const proj = this.projects.find((p) => p.sessions.some((sess) => sess.id === id));
+    if (proj) {
+      proj.sessions = [...proj.sessions];
+    } else {
+      this.standaloneSessions = [...this.standaloneSessions];
+    }
+  }
+
+  private initAgentDetection() {
+    globalAgentStateMachine.onStateChange((sessionId, oldStatus, newStatus, details) => {
+      this.setSessionAgentStatus(sessionId, newStatus);
+    });
+
+    globalAgentStateMachine.onBlocked((sessionId, details, agentName) => {
+      // 1. Play alert sound
+      playAlertSound();
+
+      // 2. Format and dispatch agent event
+      const s = this.allSessions.find((sess) => sess.id === sessionId);
+      const msg = details.matchedLine || (details.matchedPattern ? `Prompt detected: ${details.matchedPattern}` : 'Human interaction or approval required');
+
+      this.handleAgentEvent({
+        type: 'permission_required',
+        agent: agentName,
+        sessionId,
+        cwd: s?.cwd,
+        message: msg,
+        timestamp: Date.now(),
+      });
+    });
+
+    globalAgentStateMachine.onCompleted((sessionId, agentName) => {
+      this.setSessionAgentStatus(sessionId, 'idle');
+    });
   }
 
   navigateToSession(projectId?: string, sessionId?: string) {
@@ -2132,6 +2291,44 @@ class AppState {
     }
   }
 
+  addProjectTerminalSession(projectId: string): string {
+    if (projectId === this.activeProjectId) {
+      return this.addTerminalSession();
+    }
+    this.switchProject(projectId);
+    return this.addTerminalSession();
+  }
+
+  closeProjectSession(projectId: string, sessionId: string) {
+    if (projectId === this.activeProjectId) {
+      this.closeSession(sessionId);
+      return;
+    }
+    const project = this.projects.find((p) => p.id === projectId);
+    if (!project || project.sessions.length <= 1) return;
+    killPty(sessionId).catch(() => {});
+    project.sessions = project.sessions.filter((s) => s.id !== sessionId);
+    if (project.activeSessionId === sessionId) {
+      project.activeSessionId = project.sessions[0]?.id || '';
+    }
+    if (project.secondarySessionId === sessionId) {
+      project.secondarySessionId = null;
+      project.terminalLayout = 'single';
+    }
+    this.saveProjects();
+  }
+
+  selectProjectSession(projectId: string, sessionId: string) {
+    if (this.workspaceView === 'review') {
+      this.setWorkspaceView('terminal');
+    }
+    if (projectId !== this.activeProjectId) {
+      this.switchProject(projectId);
+    }
+    this.setActiveSession(sessionId);
+    this.focusActiveTerminal();
+  }
+
   // -------------------------------------------------------------
   // Folder Picker Navigation
   // -------------------------------------------------------------
@@ -2366,7 +2563,12 @@ class AppState {
   }
 
   setWebPreviewUrl(url: string) {
-    this.webPreviewUrl = normalizePreviewUrl(url);
+    const trimmed = (url || '').trim();
+    if (!trimmed) {
+      this.webPreviewUrl = '';
+      return;
+    }
+    this.webPreviewUrl = normalizePreviewUrl(trimmed);
   }
 
   toggleInspectMode(forceState?: boolean) {

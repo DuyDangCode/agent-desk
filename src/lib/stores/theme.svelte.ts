@@ -78,9 +78,9 @@ export const NORD_CSS_VARS: Record<string, string> = {
 };
 
 class ThemeState {
-  mode = $state<ThemePreference>('system');
+  mode = $state<ThemePreference>('dark');
   resolved = $state<ResolvedTheme>('dark');
-  systemPrefersDark = $state<boolean>(false);
+  systemPrefersDark = $state<boolean>(true);
   private mediaQuery: MediaQueryList | null = null;
   private mediaListener: ((e: MediaQueryListEvent) => void) | null = null;
 
@@ -114,10 +114,10 @@ class ThemeState {
       if (stored) {
         this.mode = stored;
       } else {
-        this.mode = 'system';
+        this.mode = 'dark';
       }
     } catch {
-      this.mode = 'system';
+      this.mode = 'dark';
     }
 
     this.applyTheme();

@@ -124,6 +124,15 @@ pub fn spawn_event_listener(app: AppHandle, port: u16) {
                                         if let Some(pos) = slice.windows(4).position(|w| w == b"\r\n\r\n") {
                                             body_start = Some(pos + 4);
                                             let headers = String::from_utf8_lossy(&slice[..pos]);
+                                            let first_line = headers.lines().next().unwrap_or("").trim().to_string();
+
+                                            // 1. CORS Preflight
+                                            if first_line.starts_with("OPTIONS") {
+                                                let resp = b"HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nConnection: close\r\n\r\n";
+                                                let _ = stream.write_all(resp).await;
+                                                return;
+                                            }
+
                                             for line in headers.lines() {
                                                 if line.to_lowercase().starts_with("content-length:") {
                                                     if let Some(val) = line.split(':').nth(1) {
@@ -153,15 +162,120 @@ pub fn spawn_event_listener(app: AppHandle, port: u16) {
                                 }
                             }
 
-                            if let Ok(event) = serde_json::from_slice::<AgentEvent>(&body_bytes) {
-                                log::info!("Received desktop agent event: {:?}", event);
-                                let _ = app_handle.emit("agent-event", &event);
-
-                                let resp = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}\n";
-                                let _ = stream.write_all(resp).await;
+                            let slice = &buf[..total_read];
+                            let header_str = if let Some(pos) = slice.windows(4).position(|w| w == b"\r\n\r\n") {
+                                String::from_utf8_lossy(&slice[..pos]).to_string()
                             } else {
-                                let resp = b"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Invalid agent event payload\"}\n";
-                                let _ = stream.write_all(resp).await;
+                                String::new()
+                            };
+                            let first_line = header_str.lines().next().unwrap_or("").trim().to_string();
+
+                            // 2. Agent Events Endpoints
+                            if first_line.starts_with("POST /agent-events") || first_line.starts_with("POST /api/agent-events") {
+                                if let Ok(event) = serde_json::from_slice::<AgentEvent>(&body_bytes) {
+                                    log::info!("Received desktop agent event: {:?}", event);
+                                    let _ = app_handle.emit("agent-event", &event);
+                                    let resp = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}\n";
+                                    let _ = stream.write_all(resp).await;
+                                } else {
+                                    let resp = b"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{\"error\":\"Invalid agent event payload\"}\n";
+                                    let _ = stream.write_all(resp).await;
+                                }
+                                return;
+                            }
+
+                            // 2b. Component Picked Endpoint (dispatched from native webviews or external browsers)
+                            if first_line.starts_with("POST /api/component-picked") || first_line.starts_with("POST /component-picked") {
+                                if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
+                                    log::info!("Received component picked event via HTTP: {:?}", payload);
+                                    let _ = app_handle.emit("agentdeck:component-picked", &payload);
+                                    let resp = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}\n";
+                                    let _ = stream.write_all(resp).await;
+                                } else {
+                                    let resp = b"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{\"error\":\"Invalid payload\"}\n";
+                                    let _ = stream.write_all(resp).await;
+                                }
+                                return;
+                            }
+
+                            // 2c. Component Steer Endpoint (dispatched from in-window steer modal)
+                            if first_line.starts_with("POST /api/component-steer") || first_line.starts_with("POST /component-steer") {
+                                if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
+                                    log::info!("Received component steer event via HTTP: {:?}", payload);
+                                    let _ = app_handle.emit("agentdeck:steer-component", &payload);
+                                    let _ = crate::commands::focus_app_window(app_handle.clone());
+                                    let resp = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}\n";
+                                    let _ = stream.write_all(resp).await;
+                                } else {
+                                    let resp = b"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{\"error\":\"Invalid payload\"}\n";
+                                    let _ = stream.write_all(resp).await;
+                                }
+                                return;
+                            }
+
+                            // 3. Smart Proxy Full Gateway (Proxies HTML, JS modules, CSS, chunks, images, APIs)
+                            let mut headers_vec = Vec::new();
+                            for line in header_str.lines().skip(1) {
+                                if let Some(c) = line.find(':') {
+                                    headers_vec.push((line[..c].trim().to_string(), line[c + 1..].trim().to_string()));
+                                }
+                            }
+                            let method = first_line.split_whitespace().next().unwrap_or("GET").to_string();
+                            let (target_port, forward_path) = crate::preview::resolve_request_target_port(&first_line, &headers_vec);
+
+                            match crate::preview::forward_proxy_request(target_port, &method, &forward_path, &headers_vec, &body_bytes).await {
+                                Ok(res) => {
+                                    let reason = match res.status_code {
+                                        200 => "OK",
+                                        201 => "Created",
+                                        204 => "No Content",
+                                        206 => "Partial Content",
+                                        301 => "Moved Permanently",
+                                        302 => "Found",
+                                        304 => "Not Modified",
+                                        400 => "Bad Request",
+                                        401 => "Unauthorized",
+                                        403 => "Forbidden",
+                                        404 => "Not Found",
+                                        500 => "Internal Server Error",
+                                        502 => "Bad Gateway",
+                                        503 => "Service Unavailable",
+                                        504 => "Gateway Timeout",
+                                        _ => "",
+                                    };
+                                    let mut head_str = format!(
+                                        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n",
+                                        res.status_code, reason, res.content_type, res.body.len()
+                                    );
+                                    for (k, v) in &res.headers {
+                                        if !k.eq_ignore_ascii_case("content-type") && !k.eq_ignore_ascii_case("content-length") && !k.eq_ignore_ascii_case("connection") {
+                                            head_str.push_str(&format!("{}: {}\r\n", k, v));
+                                        }
+                                    }
+                                    head_str.push_str("\r\n");
+                                    let _ = stream.write_all(head_str.as_bytes()).await;
+                                    if !res.body.is_empty() {
+                                        let _ = stream.write_all(&res.body).await;
+                                    }
+                                }
+                                Err(err) => {
+                                    if method == "GET" && (forward_path == "/" || forward_path.ends_with(".html") || !forward_path.contains('.')) {
+                                        let offline = crate::preview::render_dev_server_offline_html(&format!("http://localhost:{}", target_port));
+                                        let resp = format!(
+                                            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{}",
+                                            offline.len(),
+                                            offline
+                                        );
+                                        let _ = stream.write_all(resp.as_bytes()).await;
+                                    } else {
+                                        let resp = format!(
+                                            "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\nContent-Length: {}\r\n\r\nProxy error: {}",
+                                            err.len() + 13,
+                                            err
+                                        );
+                                        let _ = stream.write_all(resp.as_bytes()).await;
+                                    }
+                                }
                             }
                         });
                     }

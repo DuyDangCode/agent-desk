@@ -2,6 +2,7 @@ pub mod agent_events;
 pub mod commands;
 pub mod git;
 pub mod integrations;
+pub mod preview;
 pub mod pty;
 pub mod watcher;
 
@@ -28,6 +29,7 @@ pub fn run() {
             write_pty,
             resize_pty,
             kill_pty,
+            get_pty_process_info,
             open_repository,
             unwatch_repository,
             get_repository_diffs,
@@ -58,7 +60,17 @@ pub fn run() {
             focus_app_window,
             get_agent_integrations,
             install_agent_integration,
-            uninstall_agent_integration
+            uninstall_agent_integration,
+            fetch_preview_page,
+            open_native_preview_window,
+            close_native_preview_window,
+            is_native_preview_open,
+            focus_native_preview_window,
+            reload_native_preview_window,
+            report_inspected_component,
+            steer_selected_component,
+            close_native_steer_popup,
+            set_native_preview_inspect
         ])
         .run(tauri::generate_context!())
         .expect("error while running agent-deck application");
