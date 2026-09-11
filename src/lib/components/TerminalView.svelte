@@ -54,8 +54,6 @@
   // Persistent module-level terminal cache
   const terminalMap = new Map<string, SessionTerminal>();
   const sessionInputBuffers = new Map<string, string>();
-  const sessionOutputBuffers = new Map<string, string>();
-  const lastDetectedPromptMap = new Map<string, number>();
   const lastProcessCheckMap = new Map<string, number>();
   const lastBufferEvalMap = new Map<string, number>();
   let detectionInterval: any = null;
@@ -127,7 +125,6 @@
   let editingTitle = $state<string>('');
 
   // Quick Launch Dropdown State
-  let selectedQuickAction = $state<string>('');
   let isQuickLaunchOpen = $state(false);
   let isSessionDropdownOpen = $state(false);
   let isPane1SessionDropdownOpen = $state(false);
@@ -241,9 +238,8 @@
       agy: { cmd: 'agy\r', agentKind: 'antigravity' },
       opencode: { cmd: 'opencode\r', agentKind: 'opencode' },
       claude: { cmd: 'claude\r', agentKind: 'claude' },
-      aider: { cmd: 'aider\r', agentKind: 'aider' },
-      gemini: { cmd: 'gemini\r', agentKind: 'gemini' },
-      goose: { cmd: 'goose\r', agentKind: 'goose' },
+      pi: { cmd: 'pi\r', agentKind: 'pi' },
+      codex: { cmd: 'codex\r', agentKind: 'codex' },
       git_status: { cmd: 'git status\r' },
       git_diff: { cmd: 'git diff\r' },
       clear: { cmd: 'clear\r' },
@@ -255,18 +251,10 @@
     }
   }
 
-  function onSelectQuickAction(e: Event) {
-    const val = (e.target as HTMLSelectElement).value;
-    executeQuickAction(val);
-    selectedQuickAction = '';
-  }
-
   // Real-time typed command agent start/exit detection
   function detectAgentFromTypedInput(sessionId: string, data: string) {
     if (data && data.length > 0) {
       appState.clearSessionAttention(sessionId);
-      sessionOutputBuffers.set(sessionId, '');
-      lastDetectedPromptMap.delete(sessionId);
     }
     let buf = sessionInputBuffers.get(sessionId) || '';
     if (data === '\r' || data === '\n') {
@@ -281,6 +269,10 @@
           appState.setSessionAgent(sessionId, true, 'opencode', s.title.startsWith('Terminal') ? 'OpenCode' : undefined);
         } else if (firstWord === 'claude') {
           appState.setSessionAgent(sessionId, true, 'claude', s.title.startsWith('Terminal') ? 'Claude Code' : undefined);
+        } else if (firstWord === 'pi') {
+          appState.setSessionAgent(sessionId, true, 'pi', s.title.startsWith('Terminal') ? 'Pi Agent' : undefined);
+        } else if (firstWord === 'codex') {
+          appState.setSessionAgent(sessionId, true, 'codex', s.title.startsWith('Terminal') ? 'Codex Agent' : undefined);
         } else if (firstWord === 'aider') {
           appState.setSessionAgent(sessionId, true, 'aider', s.title.startsWith('Terminal') ? 'Aider AI' : undefined);
         } else if (firstWord === 'gemini') {
@@ -574,6 +566,10 @@
         appState.setSessionAgent(sessionId, true, 'antigravity', s.title.startsWith('Terminal') ? 'Antigravity (AGY)' : undefined);
       } else if (lower.includes('opencode')) {
         appState.setSessionAgent(sessionId, true, 'opencode', s.title.startsWith('Terminal') ? 'OpenCode' : undefined);
+      } else if (lower.includes('codex')) {
+        appState.setSessionAgent(sessionId, true, 'codex', s.title.startsWith('Terminal') ? 'Codex Agent' : undefined);
+      } else if (lower === 'pi' || lower.startsWith('pi ') || lower.includes('pi-agent') || lower.endsWith('/pi')) {
+        appState.setSessionAgent(sessionId, true, 'pi', s.title.startsWith('Terminal') ? 'Pi Agent' : undefined);
       } else if (lower.includes('aider')) {
         appState.setSessionAgent(sessionId, true, 'aider', s.title.startsWith('Terminal') ? 'Aider AI' : undefined);
       } else if (lower.includes('gemini')) {
@@ -836,8 +832,6 @@
           st.wrapper.remove();
           terminalMap.delete(id);
           sessionInputBuffers.delete(id);
-          sessionOutputBuffers.delete(id);
-          lastDetectedPromptMap.delete(id);
         }
       }
     }
@@ -903,6 +897,10 @@
                 appState.setSessionAgent(payload.session_id, true, 'antigravity');
               } else if (oscTitle.includes('opencode')) {
                 appState.setSessionAgent(payload.session_id, true, 'opencode');
+              } else if (oscTitle.includes('codex')) {
+                appState.setSessionAgent(payload.session_id, true, 'codex');
+              } else if (oscTitle === 'pi' || oscTitle.startsWith('pi ') || oscTitle.includes('pi-agent') || oscTitle.endsWith('/pi')) {
+                appState.setSessionAgent(payload.session_id, true, 'pi');
               } else if (oscTitle.includes('aider')) {
                 appState.setSessionAgent(payload.session_id, true, 'aider');
               } else if (oscTitle.includes('gemini')) {
@@ -945,6 +943,8 @@
               payload.data.includes('Leaving Claude Code') ||
               payload.data.includes('Antigravity session ended') ||
               payload.data.includes('OpenCode session ended') ||
+              payload.data.includes('Codex session ended') ||
+              payload.data.includes('Pi session ended') ||
               payload.data.includes('Aider session ended') ||
               payload.data.includes('Goose session ended')
             ) {
@@ -1065,11 +1065,11 @@
             <!-- Status Badge -->
             {#if activeSession.agentStatus === 'blocked' || activeSession.attentionState}
               <span
-                class="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-500 text-white shadow-xs animate-bounce flex items-center space-x-1 shrink-0"
-                title="Agent Blocked: Waiting for user approval/input"
+                class="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-500 text-white shadow-xs animate-pulse flex items-center space-x-1 shrink-0"
+                title="Require input"
               >
                 <AlertCircle class="w-2.5 h-2.5 shrink-0" />
-                <span>Blocked</span>
+                <span>Require input</span>
               </span>
             {:else if activeSession.agentStatus === 'working'}
               <span
@@ -1140,8 +1140,8 @@
                           <div class="flex items-center space-x-1 shrink-0 ml-1.5">
                             {#if s.agentStatus === 'working'}
                               <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping shrink-0" title="Working"></span>
-                            {:else if s.agentStatus === 'blocked'}
-                              <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-bounce shrink-0" title="Blocked"></span>
+                            {:else if s.agentStatus === 'blocked' || s.attentionState}
+                              <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" title="Require input"></span>
                             {/if}
                             {#if s.id === activeSession.id}
                               <Check class="w-3.5 h-3.5 text-blue-500 shrink-0" />
@@ -1186,8 +1186,8 @@
               <span class="truncate max-w-[110px]">{p1Session.title}</span>
               {#if p1Session.agentStatus === 'working'}
                 <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping shrink-0"></span>
-              {:else if p1Session.agentStatus === 'blocked'}
-                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-bounce shrink-0"></span>
+              {:else if p1Session.agentStatus === 'blocked' || p1Session.attentionState}
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" title="Require input"></span>
               {/if}
             </button>
           {/if}
@@ -1210,8 +1210,8 @@
               <span class="truncate max-w-[110px]">{p2Session.title}</span>
               {#if p2Session.agentStatus === 'working'}
                 <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping shrink-0"></span>
-              {:else if p2Session.agentStatus === 'blocked'}
-                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-bounce shrink-0"></span>
+              {:else if p2Session.agentStatus === 'blocked' || p2Session.attentionState}
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" title="Require input"></span>
               {/if}
             </button>
           {/if}
@@ -1310,27 +1310,19 @@
             </button>
             <button
               type="button"
-              onclick={() => executeQuickAction('aider')}
+              onclick={() => executeQuickAction('pi')}
               class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card flex items-center space-x-2 text-slate-700 dark:text-deck-text cursor-pointer transition"
             >
               <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-              <span class="font-mono">Aider AI</span>
+              <span class="font-mono">Pi Agent</span>
             </button>
             <button
               type="button"
-              onclick={() => executeQuickAction('gemini')}
+              onclick={() => executeQuickAction('codex')}
               class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card flex items-center space-x-2 text-slate-700 dark:text-deck-text cursor-pointer transition"
             >
               <span class="w-2 h-2 rounded-full bg-indigo-500 shrink-0"></span>
-              <span class="font-mono">Gemini CLI</span>
-            </button>
-            <button
-              type="button"
-              onclick={() => executeQuickAction('goose')}
-              class="w-full px-2.5 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-deck-card flex items-center space-x-2 text-slate-700 dark:text-deck-text cursor-pointer transition"
-            >
-              <span class="w-2 h-2 rounded-full bg-orange-500 shrink-0"></span>
-              <span class="font-mono">Goose Agent</span>
+              <span class="font-mono">Codex Agent</span>
             </button>
 
             <!-- Git & Shell -->

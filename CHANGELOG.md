@@ -15,6 +15,35 @@ Targeted enhancements and architectural milestones planned for [Version 3.0.0](d
 
 ---
 
+## [3.1.0] - 2026-09-11
+
+### Added
+- **Pi Agent & Codex Agent Integration:**
+  - Added detection manifest `agent-detection/pi.toml` with blocked permission patterns, idle detection, and working spinners.
+  - Added Quick Launch dropdown options for Pi Agent and Codex Agent in terminal session controls.
+  - Added process inspection and foreground binary detection for `pi` and `codex`.
+  - Added comprehensive test suite `tests/quickLaunchAgents.test.ts` (boundary, collision prevention, buffer evaluation).
+- **Process Inspection Architecture:**
+  - Extracted shared Linux process inspection logic (`inspect_foreground_process`, `find_agent_in_tree`, `match_agent_binary`) into dedicated `src-tauri/src/process_info.rs` module shared by desktop and server runtimes.
+- **Agent Lifecycle & Event Types:**
+  - Added `working` event type to `AgentEventType` and `bin/agentdeck-agent-event`.
+  - Added OpenCode event listener integration for `tool.execute.before`, `chat.message`, and `session.status`.
+
+### Changed
+- **Simplified Status & Notification UI:**
+  - Standardized agent blocked state indicator across Header, Sidebar, and StatusBar to "Require input" with a subtle pulse animation.
+  - Streamlined desktop notifications to simple format: title `<Agent>` and body `[<Project>] Input required`.
+  - Consolidated ANSI stripping by unifying on `stripAnsiCodes` from `agentDetection.ts`.
+- **Documentation:**
+  - Updated `README.md` with notes on manual one-click refresh button and filesystem watcher synchronization limits.
+
+### Removed
+- Removed obsolete `ActivityBar.svelte` and `ProjectBar.svelte` components.
+- Removed redundant `agent.md` stub in favor of canonical `AGENT.md`.
+- Stripped unused Cargo and npm dependencies (`uuid`, `crossbeam-channel`, `libdbus-sys`, `@tauri-apps/plugin-shell`).
+
+---
+
 ## [3.0.0] - 2026-09-08
 
 ### Summary
@@ -144,7 +173,8 @@ Full specification: [`docs/versions/version-1-mvp.md`](docs/versions/version-1-m
 
 ---
 
-[Unreleased]: https://github.com/agentdeck/agentdeck/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/agentdeck/agentdeck/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/agentdeck/agentdeck/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/agentdeck/agentdeck/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/agentdeck/agentdeck/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/agentdeck/agentdeck/releases/tag/v1.0.0

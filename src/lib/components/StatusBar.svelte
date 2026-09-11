@@ -96,11 +96,11 @@
       {@const alertSess = appState.attentionSessions[0]}
       <button
         onclick={() => appState.navigateToSession(undefined, alertSess?.id)}
-        class="flex items-center space-x-1 text-amber-600 dark:text-amber-400 shrink-0 font-semibold cursor-pointer animate-bounce"
-        title="Coding Agent needs attention (Click to jump to session)"
+        class="flex items-center space-x-1 text-amber-600 dark:text-amber-400 shrink-0 font-semibold cursor-pointer"
+        title="Coding Agent requires input (Click to jump to session)"
       >
-        <AlertCircle class="w-3 h-3 text-amber-500" />
-        <span class="hidden md:inline">{alertSess?.title || 'Agent'}: Attention Required</span>
+        <AlertCircle class="w-3 h-3 text-amber-500 animate-pulse" />
+        <span class="hidden md:inline">{alertSess?.title || 'Agent'}: Require Input</span>
       </button>
     {:else if hasAgents}
       {@const workingAgents = appState.agentSessions.filter((s) => s.agentStatus === 'working')}

@@ -99,6 +99,8 @@ export type AgentKind =
   | 'aider' 
   | 'gemini' 
   | 'goose' 
+  | 'codex'
+  | 'pi'
   | 'custom' 
   | 'shell';
 
@@ -106,7 +108,8 @@ export type AgentEventType =
   | 'input_required'
   | 'permission_required'
   | 'attention_required'
-  | 'idle';
+  | 'idle'
+  | 'working';
 
 export interface AgentEvent {
   type: AgentEventType;

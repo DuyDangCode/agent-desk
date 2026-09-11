@@ -85,9 +85,17 @@ describe('Agent Events & Notification System Boundary Tests', () => {
         timestamp: Date.now(),
       };
 
+      const eventWorking: AgentEvent = {
+        agent: 'opencode',
+        type: 'working',
+        sessionId: 'sess-101',
+        timestamp: Date.now(),
+      };
+
       assert.equal(manager.isDuplicate(event1, 5000), false);
       assert.equal(manager.isDuplicate(event2, 5000), false);
       assert.equal(manager.isDuplicate(event3, 5000), false);
+      assert.equal(manager.isDuplicate(eventWorking, 5000), false);
     });
 
     it('Upper Bound: event passes after windowMs expires', async () => {
@@ -286,8 +294,8 @@ describe('Agent Events & Notification System Boundary Tests', () => {
       const title = manager.formatTitle(event, target);
       const body = manager.formatBody(event, target);
 
-      assert.equal(title, 'AgentDeck — Claude Needs Attention');
-      assert.equal(body, '[agent-deck] Waiting for your input to continue.');
+      assert.equal(title, 'Claude');
+      assert.equal(body, '[agent-deck] Input required');
     });
 
     it('In-Bound: permission_required event formatting', () => {
@@ -300,11 +308,11 @@ describe('Agent Events & Notification System Boundary Tests', () => {
       const title = manager.formatTitle(event, target);
       const body = manager.formatBody(event, target);
 
-      assert.equal(title, 'AgentDeck — Claude Permission Required');
-      assert.equal(body, '[agent-deck] Approval required to execute tool or command.');
+      assert.equal(title, 'Claude');
+      assert.equal(body, '[agent-deck] Input required');
     });
 
-    it('Upper Bound: event with custom message includes project prefix', () => {
+    it('Upper Bound: event with complex custom message preserves simplified content', () => {
       const event: AgentEvent = {
         agent: 'opencode',
         type: 'input_required',
@@ -315,8 +323,23 @@ describe('Agent Events & Notification System Boundary Tests', () => {
       const title = manager.formatTitle(event, target);
       const body = manager.formatBody(event, target);
 
-      assert.equal(title, 'AgentDeck — Opencode Needs Attention');
-      assert.equal(body, '[agent-deck] Tool call "Bash" requires approval: rm -rf ./tmp');
+      assert.equal(title, 'Opencode');
+      assert.equal(body, '[agent-deck] Input required');
+    });
+
+    it('In-Bound: OpenCode working event title and body formatting', () => {
+      const event: AgentEvent = {
+        agent: 'opencode',
+        type: 'working',
+        message: 'OpenCode is working',
+        timestamp: Date.now(),
+      };
+
+      const title = manager.formatTitle(event, target);
+      const body = manager.formatBody(event, target);
+
+      assert.equal(title, 'Opencode');
+      assert.equal(body, '[agent-deck] Input required');
     });
 
     it('Target without project name omits project tag prefix', () => {
@@ -333,10 +356,10 @@ describe('Agent Events & Notification System Boundary Tests', () => {
       };
 
       const body = manager.formatBody(event, standaloneTarget);
-      assert.equal(body, 'Please answer question #2');
+      assert.equal(body, 'Input required');
     });
 
-    it('In-Bound: Antigravity agent input and idle formatting', () => {
+    it('In-Bound: Antigravity agent input formatting', () => {
       const event: AgentEvent = {
         agent: 'antigravity',
         type: 'input_required',
@@ -347,8 +370,22 @@ describe('Agent Events & Notification System Boundary Tests', () => {
       const title = manager.formatTitle(event, target);
       const body = manager.formatBody(event, target);
 
-      assert.equal(title, 'AgentDeck — Antigravity Needs Attention');
-      assert.equal(body, '[agent-deck] Antigravity is asking a question');
+      assert.equal(title, 'Antigravity');
+      assert.equal(body, '[agent-deck] Input required');
+    });
+
+    it('Boundary: empty or missing agent defaults cleanly to Agent', () => {
+      const event: AgentEvent = {
+        agent: '',
+        type: 'input_required',
+        timestamp: Date.now(),
+      };
+
+      const title = manager.formatTitle(event);
+      const body = manager.formatBody(event);
+
+      assert.equal(title, 'Agent');
+      assert.equal(body, 'Input required');
     });
   });
 

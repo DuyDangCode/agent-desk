@@ -16,20 +16,20 @@
 
 **Kestrel** is an open-source, ultra-lightweight desktop workspace engineered to serve as the **control bridge and review harness** for terminal-first AI coding agents (such as Google Antigravity, OpenCode, Claude Code, Aider, Gemini CLI, Goose Agent, and bespoke local LLM runners).
 
-Rather than delegating software construction entirely to autonomous systems or struggling with detached terminal diffs, **Kestrel puts the human reviewer in the pilot seat**. Built with **Tauri v2**, **Rust**, and **Svelte 5**, it pairs a multi-project horizontal navigation deck with a multi-session embedded native pseudo-terminal (PTY) and an interactive, real-time Git differential review canvas.
+Rather than delegating software construction entirely to autonomous systems or struggling with detached terminal diffs, **Kestrel puts the human reviewer in the pilot seat**. Built with **Tauri v2**, **Rust**, and **Svelte 5**, it pairs a multi-project horizontal navigation deck with a multi-session embedded native pseudo-terminal (PTY) and an interactive Git differential review canvas.
 
 ```
 ┌─────────────────────────┐       ┌──────────────────────────┐       ┌──────────────────────────┐
-│  Multi-Project Deck     │  ──►  │ Real-Time Live Diff      │  ──►  │   Multi-Line "Steer"     │
-│ (Horizontal Project Bar │       │ (Debounced kernel watch; │       │ (Bracketed paste prompt  │
+│  Multi-Project Deck     │  ──►  │   Live Diff Review       │  ──►  │   Multi-Line "Steer"     │
+│ (Horizontal Project Bar │       │ (Kernel watch & refresh; │       │ (Bracketed paste prompt  │
 │  & Parallel PTY Agents) │       │  in-memory Myers diffs)  │       │  injection into stdin)   │
 └─────────────────────────┘       └──────────────────────────┘       └──────────────────────────┘
-                                                                                   │
-                                                                                   ▼
-                                                                     ┌──────────────────────────┐
-                                                                     │ Granular Hunk Staging &  │
-                                                                     │ Atomic libgit2 Commits   │
-                                                                     └──────────────────────────┘
+                                                                               │
+                                                                               ▼
+                                                                 ┌──────────────────────────┐
+                                                                 │ Granular Hunk Staging &  │
+                                                                 │ Atomic libgit2 Commits   │
+                                                                 └──────────────────────────┘
 ```
 
 ---
@@ -55,9 +55,10 @@ Rather than delegating software construction entirely to autonomous systems or s
 * **Real-Time Agent Auto-Detection:** Automatically identifies when agents (`agy`, `antigravity`, `opencode`, `claude`, `aider`, `gemini`, `goose`) are started via typed commands or output banners, and tags tabs with active agent badges (🤖 vs 💻).
 * **⚡ Quick Launch Select:** Instant dropdown menu to launch pre-configured AI coding agents or execute shell utilities (`git status`, `git diff`, `clear`).
 
-### 3. ⚡ Kernel-Level Real-Time Review Canvas & Markdown Preview
-* **Instant In-Flight Diff Sync:** Automatic file modification detection via `notify-debouncer-mini` with instant live diff refresh (< 200ms) on agent writes.
-* **Working-Tree & Untracked File Support:** Synthesizes in-memory Myers diffs via `libgit2` and disk buffers, ensuring both tracked, untracked, and newly created files render immediately.
+### 3. ⚡ Differential Review Canvas & Markdown Preview
+* **File Changes & Working-Tree Diff Sync:** File change detection integrated via `notify-debouncer-mini` and `libgit2`. *(Note: The file changes system is debounced and currently does not always sync up in real-time across all environments; use the manual **Refresh** button in the header toolbar to immediately fetch the latest changes).*
+* **Manual One-Click Refresh:** Dedicated **Refresh** button (`RefreshCw` / `Refresh Git status and diffs`) in the header toolbar to instantly resync git status, modified file lists, and diff views on demand.
+* **Working-Tree & Untracked File Support:** Synthesizes in-memory Myers diffs via `libgit2` and disk buffers, ensuring both tracked, untracked, and newly created files render cleanly.
 * **Intra-Line Word Diffs:** Sub-token and character-level diff highlighting for precision micro-review of agent code modifications.
 * **Split & Unified Diff Views:** Toggle between Side-by-Side (Split) and Inline (Unified) diff visualizations with syntax highlighting and line numbers.
 * **📝 Rich Markdown Render Preview:** 1-click toggle between Raw Diff / Code view and rendered Markdown HTML for all markdown files (`.md`, `.markdown`, `.mdown`, `.mkdn`, `.mdx`). Supports GitHub Flavored Markdown (GFM) headers, bold/italics, strikethrough, interactive task checklists (`- [x]`), syntax-highlighted code blocks, tables with column alignment, and XSS sanitization (`javascript:` / `data:` URI neutralization), plus colored diff additions and deletions.
@@ -178,9 +179,17 @@ npm run tauri build
    # or
    aider --model gpt-4o
    ```
-3. **Switch Between Projects:** Click project pills on the horizontal bar or use `Ctrl+Alt+Left/Right` to monitor live in-flight diffs across multiple services in parallel.
+3. **Switch Between Projects & Refresh Diffs:** Click project pills on the horizontal bar or use `Ctrl+Alt+Left/Right` to inspect diffs across multiple services. If file changes made by background agents do not immediately appear in real-time, click the **Refresh** button (`⟳`) in the header toolbar to immediately reload the working tree and diff canvas.
 4. **Drag & Steer:** Spot a bug or hallucination? **Click & drag across lines** (or Shift+Click), click **Steer Selection**, type your instruction, and press `Ctrl+Enter` / `Cmd+Enter`.
 5. **Stage & Commit:** Verify good changes, discard hallucinations, and commit natively per project with libgit2.
+
+---
+
+## ⚠️ Known Limitations & Current Status
+
+* **Real-Time File Changes Synchronization:** The automated filesystem watcher (`notify-debouncer-mini`) currently does not always sync up file modifications in real-time across all platforms and environments (such as under Linux inotify watch limits or rapid agent write bursts).
+  * **Workaround:** Click the **Refresh** button (`⟳`) in the top header navigation bar (`Refresh Git status and diffs`) to instantly reload the working tree, modified file list, and diff canvas.
+  * Low-latency real-time watcher optimizations and polling fallbacks are actively tracked for upcoming releases.
 
 ---
 

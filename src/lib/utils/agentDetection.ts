@@ -233,7 +233,7 @@ function assignArrayToSection(
 ): void {
   if (section === 'agent' && (key === 'binary_names' || key === 'binarynames')) {
     manifest.binaryNames = [...manifest.binaryNames, ...items];
-  } else if (section === 'patterns') {
+  } else if (section === 'patterns' || section === 'agent' || !section) {
     if (key === 'blocked') {
       manifest.patterns.blocked = [...manifest.patterns.blocked, ...items];
     } else if (key === 'idle') {
@@ -343,7 +343,7 @@ export function evaluateBufferAgainstManifest(
   }
 
   const joinedBuffer = lines.join('\n');
-  const bottomLines = lines.slice(-4); // Prompt is usually in bottom 1-4 lines
+  const bottomLines = lines.slice(-10); // Prompt is usually in bottom 1-10 lines (accommodates TUI status footers)
 
   // 1. Check 'blocked' first (Highest Priority)
   for (const rx of manifest.blocked) {
@@ -360,12 +360,12 @@ export function evaluateBufferAgainstManifest(
   }
 
   // 2. Check 'idle' second (Medium Priority)
-  // Idle patterns (prompts like '❯', '>') match the very bottom of the buffer
+  // Idle patterns (prompts like '❯', '>') match the bottom of the buffer
   for (const rx of manifest.idle) {
     for (let i = bottomLines.length - 1; i >= 0; i--) {
       const line = bottomLines[i].trim();
       if (rx.test(line)) {
-        // Double check: ensure no active working spinner is on this same line
+        // Double check: ensure no active working spinner or interrupt indicator is on this same line
         const hasWorkingOnSameLine = manifest.working.some((wrx) => wrx.test(line));
         if (!hasWorkingOnSameLine) {
           return {
@@ -819,6 +819,29 @@ const BUILTIN_MANIFESTS: AgentManifest[] = [
     }
   },
   {
+    name: 'pi',
+    binaryNames: ['pi', 'pi-agent'],
+    patterns: {
+      blocked: [
+        '(?i)\\[y/N\\]',
+        '(?i)\\(y/n\\)',
+        '(?i)approve',
+        '(?i)permission\\s+(required|needed|request)',
+        '(?i)do you want to proceed'
+      ],
+      idle: [
+        '^❯\\s*$',
+        '^pi>\\s*$',
+        '^[\\w\\-\\.]+>\\s*$'
+      ],
+      working: [
+        '[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]',
+        '(?i)thinking\\.\\.\\.',
+        '(?i)generating\\.\\.\\.'
+      ]
+    }
+  },
+  {
     name: 'opencode',
     binaryNames: ['opencode'],
     patterns: {
@@ -835,21 +858,22 @@ const BUILTIN_MANIFESTS: AgentManifest[] = [
       ],
       idle: [
         '(?i)ask\\s+anything',
-        '(?i)tab\\s+agents',
-        '(?i)ctrl\\+p\\s+commands',
-        '(?i)tip\\s+run\\s+opencode',
         '^opencode>\\s*$',
         '^❯\\s*$',
         '^[\\w\\-\\.]+>\\s*$'
       ],
       working: [
+        '(?i)(?:esc\\s+(?:to\\s+)?|again\\s+to\\s+)?interrupt|esc\\s+(to\\s+)?(stop|cancel)',
+        '(?i)waiting\\s+for\\s+assistant',
+        '(?i)sending\\s+prompt',
+        '(?i)starting\\s+new\\s+session',
+        '[■⬝⬥◆⬩⬪]',
         '[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]',
         '(?i)thinking',
         '(?i)reasoning',
         '(?i)executing',
         '(?i)running\\s+(tool|command|bash|subagent)?',
         '(?i)applying\\s+patch',
-        '(?i)esc\\s+to\\s+(interrupt|stop|cancel)',
         '\\d+s\\s+\\|'
       ]
     }

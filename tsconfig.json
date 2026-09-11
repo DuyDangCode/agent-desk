@@ -5,6 +5,8 @@
     "module": "ESNext",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "allowJs": true,
     "checkJs": true,
     "isolatedModules": true,

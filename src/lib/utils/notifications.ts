@@ -1,4 +1,5 @@
 import type { AgentEvent, AgentEventType, ProjectItem, PtySession } from '$lib/types';
+import { stripAnsiCodes } from './agentDetection.ts';
 
 export interface ResolvedSessionTarget {
   projectId?: string;
@@ -118,28 +119,18 @@ export class NotificationManager {
   }
 
   /**
-   * Formats a clean, readable notification title
+   * Formats a clean, simple notification title
    */
-  formatTitle(event: AgentEvent, target: ResolvedSessionTarget): string {
-    const agentCapitalized = event.agent.charAt(0).toUpperCase() + event.agent.slice(1);
-    if (event.type === 'permission_required') {
-      return `AgentDeck — ${agentCapitalized} Permission Required`;
-    }
-    return `AgentDeck — ${agentCapitalized} Needs Attention`;
+  formatTitle(event: AgentEvent, _target?: ResolvedSessionTarget): string {
+    const a = event.agent?.trim();
+    return a ? a.charAt(0).toUpperCase() + a.slice(1) : 'Agent';
   }
 
   /**
-   * Formats a descriptive notification body
+   * Formats a simple, concise notification body
    */
-  formatBody(event: AgentEvent, target: ResolvedSessionTarget): string {
-    const projPrefix = target.projectName ? `[${target.projectName}] ` : '';
-    if (event.message) {
-      return `${projPrefix}${event.message}`;
-    }
-    if (event.type === 'permission_required') {
-      return `${projPrefix}Approval required to execute tool or command.`;
-    }
-    return `${projPrefix}Waiting for your input to continue.`;
+  formatBody(_event: AgentEvent, target?: ResolvedSessionTarget): string {
+    return target?.projectName ? `[${target.projectName}] Input required` : 'Input required';
   }
 
   /**
@@ -177,24 +168,10 @@ export class NotificationManager {
 export const notificationManager = new NotificationManager();
 
 /**
- * Strips ANSI escape sequences, OSC title codes, and control characters from terminal text
+ * Strips ANSI escape sequences, OSC title codes, and control characters from terminal text.
+ * Delegates to stripAnsiCodes from agentDetection for unified ANSI handling.
  */
-export function stripAnsi(text: string): string {
-  if (!text) return '';
-  return text
-    // Strip OSC sequences (e.g. \x1b]0;title\x07 or \x1b]0;title\x1b\)
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-    // Strip CSI sequences (e.g. \x1b[...m, \x1b[?25h, \x1b[2K, \x1b[1;34m)
-    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
-    // Strip character set designations like \x1b(B, \x1b)0
-    .replace(/\x1b[\(\)][A-Za-z0-9]/g, '')
-    // Strip 2-byte escape sequences like \x1b=, \x1b>, \x1bN, \x1bO, etc.
-    .replace(/\x1b[@-Z\\-_]|[\x80-\x9f]/g, '')
-    // Normalize CRLF and isolated CR to LF
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/\u00a0/g, ' ');
-}
+export const stripAnsi = stripAnsiCodes;
 
 export interface DetectedPrompt {
   type: 'permission_required' | 'input_required';

@@ -182,10 +182,10 @@
       <button
         onclick={() => appState.navigateToSession(undefined, alertSess?.id)}
         class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-medium text-xs shadow-xs animate-pulse transition cursor-pointer"
-        title="Coding Agent requires your attention ({alertSess?.title || 'Terminal'})"
+        title="Coding Agent requires input ({alertSess?.title || 'Terminal'})"
       >
-        <AlertCircle class="w-3.5 h-3.5 animate-bounce" />
-        <span class="hidden sm:inline">{alertSess?.attentionState === 'permission_required' ? 'Permission Needed' : 'Input Needed'}</span>
+        <AlertCircle class="w-3.5 h-3.5" />
+        <span class="hidden sm:inline">Require Input</span>
       </button>
     {/if}
 

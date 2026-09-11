@@ -422,6 +422,8 @@ impl IntegrationManager {
     }
 
     pub fn install_opencode_integration() -> Result<AgentIntegrationInfo, String> {
+        let _ = Self::ensure_bridge_binary_installed();
+
         let plugin_path = Self::opencode_plugin_path();
         if let Some(parent) = plugin_path.parent() {
             fs::create_dir_all(parent)
@@ -451,27 +453,35 @@ function postEvent(payload) {
 }
 
 export default async function agentdeckPlugin() {
+  const notify = (type, message) => postEvent({
+    type,
+    agent: 'opencode',
+    sessionId: process.env.AGENTDECK_SESSION_ID,
+    cwd: process.env.AGENTDECK_PROJECT_PATH,
+    message,
+    timestamp: Date.now(),
+  });
+
   return {
     async 'permission.ask'(input) {
-      postEvent({
-        type: 'permission_required',
-        agent: 'opencode',
-        sessionId: process.env.AGENTDECK_SESSION_ID,
-        cwd: process.env.AGENTDECK_PROJECT_PATH,
-        message: input?.title || input?.type || 'Tool permission required',
-        timestamp: Date.now(),
-      });
+      notify('permission_required', input?.title || input?.type || 'Tool permission required');
+    },
+    async 'tool.execute.before'(input) {
+      notify('working', input?.tool ? `Running tool: ${input.tool}` : 'Executing tool');
+    },
+    async 'chat.message'(input) {
+      notify('working', 'OpenCode is generating response');
     },
     async 'event'(input) {
       if (input?.event?.type === 'session.idle') {
-        postEvent({
-          type: 'idle',
-          agent: 'opencode',
-          sessionId: process.env.AGENTDECK_SESSION_ID,
-          cwd: process.env.AGENTDECK_PROJECT_PATH,
-          message: 'OpenCode is idle and waiting for instructions',
-          timestamp: Date.now(),
-        });
+        notify('idle', 'OpenCode is idle and waiting for instructions');
+      } else if (input?.event?.type === 'session.status') {
+        const statusType = input.event.properties?.status?.type;
+        if (statusType === 'busy' || statusType === 'retry') {
+          notify('working', 'OpenCode is working');
+        } else if (statusType === 'idle') {
+          notify('idle', 'OpenCode is idle and waiting for instructions');
+        }
       }
     },
   };
@@ -516,8 +526,14 @@ export default async function agentdeckPlugin() {
         if config_path.exists() {
             if let Ok(content) = fs::read_to_string(&config_path) {
                 if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(arr) = json.get_mut("plugin").and_then(|p| p.as_array_mut()) {
-                        arr.retain(|v| !v.as_str().map(|s| s.contains("agentdeck")).unwrap_or(false));
+                    let mut changed = false;
+                    for key in ["plugin", "plugins"] {
+                        if let Some(arr) = json.get_mut(key).and_then(|p| p.as_array_mut()) {
+                            arr.retain(|v| !v.as_str().map(|s| s.contains("agentdeck")).unwrap_or(false));
+                            changed = true;
+                        }
+                    }
+                    if changed {
                         if let Ok(formatted) = serde_json::to_string_pretty(&json) {
                             let _ = fs::write(&config_path, formatted);
                         }

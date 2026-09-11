@@ -337,7 +337,7 @@
       <div class="flex items-center justify-between space-x-3 px-3.5 py-2.5 rounded-lg shadow-xl border text-xs font-medium {appState.toastType === 'attention' ? 'bg-amber-50 dark:bg-amber-950/95 text-amber-900 dark:text-amber-200 border-amber-400 dark:border-amber-500/50 shadow-amber-500/10' : appState.toastType === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/90 text-emerald-900 dark:text-emerald-200 border-emerald-300 dark:border-emerald-500/40' : appState.toastType === 'error' ? 'bg-rose-50 dark:bg-rose-950/90 text-rose-900 dark:text-rose-200 border-rose-300 dark:border-rose-500/40' : appState.toastType === 'loading' ? 'bg-blue-50 dark:bg-blue-950/90 text-blue-900 dark:text-blue-200 border-blue-300 dark:border-blue-500/40' : 'bg-white dark:bg-deck-card text-slate-900 dark:text-deck-bright border-deck-border'}">
         <div class="flex items-center space-x-2 min-w-0">
           {#if appState.toastType === 'attention'}
-            <AlertCircle class="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 animate-bounce" />
+            <AlertCircle class="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 animate-pulse" />
           {:else if appState.toastType === 'success'}
             <CheckCircle2 class="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
           {:else if appState.toastType === 'error'}

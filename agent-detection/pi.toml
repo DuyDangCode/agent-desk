@@ -1,0 +1,24 @@
+[agent]
+name = "pi"
+binary_names = ["pi", "pi-agent"]
+
+[patterns]
+blocked = [
+  "(?i)\\[y/N\\]",
+  "(?i)\\(y/n\\)",
+  "(?i)approve",
+  "(?i)permission\\s+(required|needed|request)",
+  "(?i)do you want to proceed"
+]
+
+idle = [
+  "^❯\\s*$",
+  "^pi>\\s*$",
+  "^[\\w\\-\\.]+>\\s*$"
+]
+
+working = [
+  "[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]",
+  "(?i)thinking\\.\\.\\.",
+  "(?i)generating\\.\\.\\."
+]

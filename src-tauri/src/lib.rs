@@ -3,6 +3,7 @@ pub mod commands;
 pub mod git;
 pub mod integrations;
 pub mod preview;
+pub mod process_info;
 pub mod pty;
 pub mod watcher;
 

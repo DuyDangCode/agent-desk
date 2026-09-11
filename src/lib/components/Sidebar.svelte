@@ -334,7 +334,7 @@
                   <div class="flex items-center space-x-1 shrink-0">
                     <!-- Terminal Status Indicators (dots/icons) -->
                     {#if session.agentStatus === 'blocked' || session.attentionState}
-                      <span class="flex items-center text-amber-500 mr-0.5" title="Agent Blocked: Waiting for user input">
+                      <span class="flex items-center text-amber-500 mr-0.5" title="Require input">
                         <AlertCircle class="w-3 h-3 animate-pulse" />
                       </span>
                     {:else if session.agentStatus === 'working'}
@@ -619,7 +619,7 @@
                     </div>
                     <div class="flex items-center space-x-1 shrink-0">
                       {#if session.agentStatus === 'blocked' || session.attentionState}
-                        <span class="text-amber-500 mr-0.5" title="Blocked">
+                        <span class="text-amber-500 mr-0.5" title="Require input">
                           <AlertCircle class="w-3 h-3 animate-pulse" />
                         </span>
                       {:else if session.agentStatus === 'working'}

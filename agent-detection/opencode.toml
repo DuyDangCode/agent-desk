@@ -2,6 +2,7 @@
 name = "opencode"
 binary_names = ["opencode"]
 
+[patterns]
 # 1. Highest Priority: Requires user permission or approval
 blocked = [
   "(?i)allow\\s+once",
@@ -18,9 +19,6 @@ blocked = [
 # 2. Medium Priority: Agent is waiting for user prompt in TUI
 idle = [
   "(?i)ask\\s+anything",
-  "(?i)tab\\s+agents",
-  "(?i)ctrl\\+p\\s+commands",
-  "(?i)tip\\s+run\\s+opencode",
   "^opencode>\\s*$",
   "^❯\\s*$",
   "^[\\w\\-\\.]+>\\s*$"
@@ -28,12 +26,16 @@ idle = [
 
 # 3. Lowest Priority: Active streaming, thinking, or tool execution
 working = [
+  "(?i)(?:esc\\s+(?:to\\s+)?|again\\s+to\\s+)?interrupt|esc\\s+(to\\s+)?(stop|cancel)",
+  "(?i)waiting\\s+for\\s+assistant",
+  "(?i)sending\\s+prompt",
+  "(?i)starting\\s+new\\s+session",
+  "[■⬝⬥◆⬩⬪]",
   "[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]",
   "(?i)thinking",
   "(?i)reasoning",
   "(?i)executing",
   "(?i)running\\s+(tool|command|bash|subagent)?",
   "(?i)applying\\s+patch",
-  "(?i)esc\\s+to\\s+(interrupt|stop|cancel)",
   "\\d+s\\s+\\|"
 ]

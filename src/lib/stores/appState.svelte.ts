@@ -662,7 +662,7 @@ class AppState {
   isProjectAttentionRequired(projectId: string): boolean {
     const p = this.projects.find((proj) => proj.id === projectId);
     if (!p) return false;
-    return p.sessions.some((s) => Boolean(s.attentionState));
+    return p.sessions.some((s) => Boolean(s.attentionState) || s.agentStatus === 'blocked');
   }
 
   get activeSession(): PtySession | undefined {
@@ -1737,6 +1737,8 @@ class AppState {
       antigravity: { cmd: 'agy\r', title: 'Antigravity (AGY)' },
       opencode: { cmd: 'opencode\r', title: 'OpenCode' },
       claude: { cmd: 'claude\r', title: 'Claude Code' },
+      pi: { cmd: 'pi\r', title: 'Pi Agent' },
+      codex: { cmd: 'codex\r', title: 'Codex Agent' },
       aider: { cmd: 'aider\r', title: 'Aider AI' },
       gemini: { cmd: 'gemini\r', title: 'Gemini CLI' },
       goose: { cmd: 'goose\r', title: 'Goose Agent' },
@@ -1825,6 +1827,8 @@ class AppState {
           'Antigravity (AGY)', 
           'OpenCode', 
           'Claude Code', 
+          'Pi Agent',
+          'Codex Agent',
           'Aider AI', 
           'Gemini CLI', 
           'Goose Agent', 
@@ -1906,6 +1910,8 @@ class AppState {
         if (matchedKind === 'claude') agentTitle = 'Claude Code';
         else if (matchedKind === 'antigravity') agentTitle = 'Antigravity (AGY)';
         else if (matchedKind === 'opencode') agentTitle = 'OpenCode';
+        else if (matchedKind === 'pi') agentTitle = 'Pi Agent';
+        else if (matchedKind === 'codex') agentTitle = 'Codex Agent';
         else if (matchedKind === 'aider') agentTitle = 'Aider AI';
         else if (matchedKind === 'gemini') agentTitle = 'Gemini CLI';
         else if (matchedKind === 'goose') agentTitle = 'Goose Agent';
@@ -2016,7 +2022,7 @@ class AppState {
 
     if (status === 'blocked') {
       s.attentionState = 'permission_required';
-    } else if (status === 'idle') {
+    } else if (status === 'idle' || status === 'working') {
       s.attentionState = null;
       s.attentionMessage = null;
     }
@@ -2106,58 +2112,23 @@ class AppState {
         this.setSessionAgent(target.sessionId, true, (event.agent as AgentKind) || 'claude');
       }
 
-      // If idle, clear attention; otherwise set attention
-      if (event.type === 'idle') {
+      // If idle or working, clear attention and update status; otherwise set attention & blocked status
+      if (event.type === 'idle' || event.type === 'working') {
         this.clearSessionAttention(target.sessionId);
+        this.setSessionAgentStatus(target.sessionId, event.type);
       } else {
         this.setSessionAttention(target.sessionId, event.type, event.message);
+        this.setSessionAgentStatus(target.sessionId, 'blocked');
       }
     }
 
-    if (event.type === 'idle') {
+    if (event.type === 'idle' || event.type === 'working') {
       return;
     }
 
-    // 3. Routing decision based on window focus & session visibility
-    const isAppFocused = notificationManager.isAppFocused();
-    const isTargetVisible =
-      Boolean(target.sessionId) &&
-      target.sessionId === this.focusedSessionId &&
-      (!target.projectId || target.projectId === this.activeProjectId) &&
-      this.showTerminal;
-
-    const agentName = event.agent.charAt(0).toUpperCase() + event.agent.slice(1);
-    const msg = event.message || (event.type === 'permission_required' ? 'Permission / approval required' : 'Input required');
-
-    if (!isAppFocused) {
-      // Application is unfocused or minimized -> Fire native desktop notification!
-      await notificationManager.dispatchDesktopNotification(event, target);
-
-      // Also set in-app toast for when the user returns
-      this.showToast(
-        `🤖 ${agentName}: ${msg}`,
-        'attention',
-        6000,
-        'Jump to Terminal',
-        () => this.navigateToSession(target.projectId, target.sessionId)
-      );
-    } else if (!isTargetVisible) {
-      // Application is focused, but user is on another project or tab
-      this.showToast(
-        `🤖 ${agentName} (${target.projectName || 'Terminal'}): ${msg}`,
-        'attention',
-        5000,
-        'View Session',
-        () => this.navigateToSession(target.projectId, target.sessionId)
-      );
-    } else {
-      // Application is focused AND correct terminal is visible
-      this.showToast(
-        `🤖 ${agentName}: ${msg}`,
-        'attention',
-        3000
-      );
-    }
+    // Always dispatch system notification to system with simple content.
+    // In-app keeps the agent status ("Require input") without popping up complex toast boxes.
+    await notificationManager.dispatchDesktopNotification(event, target);
   }
 
   async loadAgentIntegrations() {

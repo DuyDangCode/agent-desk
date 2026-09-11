@@ -45,6 +45,14 @@ describe('Agent Detection Engine: Screen Buffer & Pattern Matching Tests', () =>
       const agyManifest = parseAgentManifestToml(agyToml);
       assert.equal(agyManifest.name, 'antigravity');
       assert.ok(agyManifest.binaryNames.includes('agy'));
+
+      const opencodeToml = fs.readFileSync(path.resolve('agent-detection/opencode.toml'), 'utf-8');
+      const opencodeManifest = parseAgentManifestToml(opencodeToml);
+      assert.equal(opencodeManifest.name, 'opencode');
+      assert.ok(opencodeManifest.binaryNames.includes('opencode'));
+      assert.ok(opencodeManifest.patterns.blocked.length > 0);
+      assert.ok(opencodeManifest.patterns.idle.length > 0);
+      assert.ok(opencodeManifest.patterns.working.length > 0);
     });
 
     it('In-Bound: compilePattern correctly converts PCRE (?i) flag to JavaScript RegExp', () => {
@@ -444,7 +452,7 @@ describe('Agent Detection Engine: Screen Buffer & Pattern Matching Tests', () =>
       assert.equal(resDefault.status, 'blocked');
     });
 
-    it('In-Bound: OpenCode TUI idle state detected via Ask anything and footer shortcuts', () => {
+    it('In-Bound: OpenCode TUI idle state detected via Ask anything with statusline footers', () => {
       const opencodeManifest = registry.getManifestForBinary('opencode');
       const lines = [
         '▄     █▀▀█ █▀▀█ █▀▀█ █▀▀▄█▀▀▀ █▀▀█ █▀▀█ █▀▀██  █ █  █ █▀▀▀ █  ██    █  █ █  █ █▀▀▀',
@@ -458,6 +466,17 @@ describe('Agent Detection Engine: Screen Buffer & Pattern Matching Tests', () =>
         '● Tip Run opencode auth list to see all configured providers',
         '~/Projects/agent_deck',
         '1.18.30'
+      ];
+      const result = evaluateBufferAgainstManifest(lines, opencodeManifest);
+      assert.equal(result.status, 'idle', 'OpenCode with Ask anything placeholder should evaluate as idle');
+      assert.equal(result.priority, 2);
+    });
+
+    it('In-Bound: OpenCode CLI prompt matches idle', () => {
+      const opencodeManifest = registry.getManifestForBinary('opencode');
+      const lines = [
+        'Initialized workspace /home/user/project',
+        'opencode> '
       ];
       const result = evaluateBufferAgainstManifest(lines, opencodeManifest);
       assert.equal(result.status, 'idle');
@@ -476,6 +495,57 @@ describe('Agent Detection Engine: Screen Buffer & Pattern Matching Tests', () =>
       assert.equal(result.priority, 3);
     });
 
+    it('Lower Bound: OpenCode working state detected from esc interrupt without "to"', () => {
+      const opencodeManifest = registry.getManifestForBinary('opencode');
+      const lines = [
+        'Generating solution for appState.svelte.ts',
+        'esc interrupt'
+      ];
+      const result = evaluateBufferAgainstManifest(lines, opencodeManifest);
+      assert.equal(result.status, 'working');
+      assert.equal(result.priority, 3);
+    });
+
+    it('In-Bound: OpenCode real TUI working with block spinner and waiting for assistant', () => {
+      const opencodeManifest = registry.getManifestForBinary('opencode');
+      const lines = [
+        'Fixing the issue in opencode.toml...',
+        '⬝⬝■■⬝⬝ waiting for assistant',
+        'esc interrupt'
+      ];
+      const result = evaluateBufferAgainstManifest(lines, opencodeManifest);
+      assert.equal(result.status, 'working');
+      assert.equal(result.priority, 3);
+    });
+
+    it('In-Bound: OpenCode working state detected via diamond frames and again to interrupt', () => {
+      const opencodeManifest = registry.getManifestForBinary('opencode');
+      const lines = [
+        'Processing tool call...',
+        '·⬥◆⬩⬪',
+        'again to interrupt'
+      ];
+      const result = evaluateBufferAgainstManifest(lines, opencodeManifest);
+      assert.equal(result.status, 'working');
+      assert.equal(result.priority, 3);
+    });
+
+    it('Upper Bound: OpenCode TUI actively executing tools with status footer evaluates to working', () => {
+      const opencodeManifest = registry.getManifestForBinary('opencode');
+      const lines = [
+        '> fix the opencode working detection bug',
+        '■ Running tool: bash npm test',
+        'esc interrupt',
+        'tab agents',
+        'ctrl+p commands',
+        '~/Projects/agent_deck',
+        '1.18.30'
+      ];
+      const result = evaluateBufferAgainstManifest(lines, opencodeManifest);
+      assert.equal(result.status, 'working', 'Active working indicator during execution must evaluate to working');
+      assert.equal(result.priority, 3);
+    });
+
     it('In-Bound: OpenCode blocked state detected via Allow once / Always allow permission prompt', () => {
       const opencodeManifest = registry.getManifestForBinary('opencode');
       const lines = [
@@ -488,6 +558,54 @@ describe('Agent Detection Engine: Screen Buffer & Pattern Matching Tests', () =>
       const result = evaluateBufferAgainstManifest(lines, opencodeManifest);
       assert.equal(result.status, 'blocked');
       assert.equal(result.priority, 1);
+    });
+
+    // Cross-Agent Regression Prevention Tests
+    it('Regression Boundary: Claude Code with duration & token summary above prompt evaluates to idle', () => {
+      const claudeManifest = registry.getManifestForBinary('claude');
+      const lines = [
+        'Done writing tests/agentDetection.test.ts',
+        '3.4s | 410 tokens',
+        '❯ '
+      ];
+      const result = evaluateBufferAgainstManifest(lines, claudeManifest);
+      assert.equal(result.status, 'idle', 'Claude with token summary in viewport must not be stuck in working');
+      assert.equal(result.priority, 2);
+    });
+
+    it('Regression Boundary: Aider with token count above prompt evaluates to idle', () => {
+      const aiderManifest = registry.getManifestForBinary('aider');
+      const lines = [
+        'Applied edit to agentDetection.ts',
+        'Tokens: 2.3k sent, 150 received. Cost: $0.02',
+        '> '
+      ];
+      const result = evaluateBufferAgainstManifest(lines, aiderManifest);
+      assert.equal(result.status, 'idle', 'Aider with tokens line above prompt must not be stuck in working');
+      assert.equal(result.priority, 2);
+    });
+
+    it('Regression Boundary: Gemini CLI with running metric above prompt evaluates to idle', () => {
+      const geminiManifest = registry.getManifestForBinary('gemini');
+      const lines = [
+        'Finished running cargo check with 0 warnings.',
+        'gemini> '
+      ];
+      const result = evaluateBufferAgainstManifest(lines, geminiManifest);
+      assert.equal(result.status, 'idle', 'Gemini with running keyword above prompt must not be stuck in working');
+      assert.equal(result.priority, 2);
+    });
+
+    it('Regression Boundary: Antigravity with turn execution metrics above prompt evaluates to idle', () => {
+      const agyManifest = registry.getManifestForBinary('agy');
+      const lines = [
+        'Completed code modifications successfully.',
+        'Turn complete in 4.2s (18,200 tokens)',
+        'agy> '
+      ];
+      const result = evaluateBufferAgainstManifest(lines, agyManifest);
+      assert.equal(result.status, 'idle', 'Antigravity with token summary above prompt must not be stuck in working');
+      assert.equal(result.priority, 2);
     });
   });
 });

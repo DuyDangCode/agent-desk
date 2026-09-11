@@ -136,6 +136,8 @@ async function main() {
     eventType = 'permission_required';
   } else if (eventType === 'Stop' || eventType === 'idle') {
     eventType = 'idle';
+  } else if (eventType === 'working' || eventType === 'running' || eventType === 'busy') {
+    eventType = 'working';
   }
 
   // Determine Session ID
@@ -163,13 +165,13 @@ async function main() {
     undefined;
 
   if (!message) {
-    if (eventType === 'permission_required') {
-      message = `${agent.charAt(0).toUpperCase() + agent.slice(1)} requires tool permission / approval`;
-    } else if (eventType === 'idle') {
-      message = `${agent.charAt(0).toUpperCase() + agent.slice(1)} finished task and is idle`;
-    } else {
-      message = `${agent.charAt(0).toUpperCase() + agent.slice(1)} is waiting for your input`;
-    }
+    const name = agent.charAt(0).toUpperCase() + agent.slice(1);
+    const defaults = {
+      permission_required: `${name} requires tool permission / approval`,
+      idle: `${name} finished task and is idle`,
+      working: `${name} is working...`,
+    };
+    message = defaults[eventType] || `${name} is waiting for your input`;
   }
 
   const normalizedEvent = {
